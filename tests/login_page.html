@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- Hand-written stand-in for the Konto LIBRUS sign-in page: only the fields the parser reads, with made-up values. -->
+<html lang="pl">
+<head><title>logowanie</title></head>
+<body>
+  <form id="search" action="/szukaj" method="get"><input type="hidden" name="q" value="x"></form>
+  <form id="login" action="https://portal.librus.pl/konto-librus/login/action" method="post" novalidate>
+    <input type="hidden" name="redirectTo" value="/konto-librus/redirect/dru">
+    <input type="hidden" name="redirectCrc" value="0000000000000000000000000000000000000000000000000000000000000000">
+    <input type="email" name="email" autocomplete="email" value="" required>
+    <input type="password" name="password" autocomplete="current-password" value="" required>
+    <input type="hidden" name="_token" value="made-up-token" autocomplete="off">
+    <button type="submit">Zaloguj</button>
+  </form>
+</body>
+</html>
