@@ -23,6 +23,9 @@ ALLOWED_EMAILS=jan@example.com,ala@example.com \
 cargo run --release
 ```
 
+Zamiast podawać zmienne w wierszu poleceń: `cp .env.example .env`, uzupełnij, potem
+`set -a; . ./.env; set +a; cargo run --release`.
+
 `SECRET_KEY` trzymaj stały: zmiana unieważnia zapisane tokeny (wszyscy logują się ponownie).
 
 | Zmienna | Domyślnie | Znaczenie |
