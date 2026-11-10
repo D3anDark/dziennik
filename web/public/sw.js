@@ -65,3 +65,31 @@ self.addEventListener('fetch', (event) => {
   else if (url.pathname.startsWith('/assets/')) event.respondWith(cacheFirst(event));
   else event.respondWith(networkFirst(event, SHELL));
 });
+
+// A push is { title, body, url }, encrypted by the server. Browsers require a visible notification for every one.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data?.json() ?? {};
+  } catch {
+    // not ours: still has to show something
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Dziennik', { body: data.body || '', icon: '/icon-192.png', data: { url: data.url } }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url ?? '/', self.location.origin);
+  const url = target.origin === self.location.origin ? target.href : self.location.origin;
+  event.waitUntil(
+    (async () => {
+      const open = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true }))[0];
+      if (!open) return self.clients.openWindow(url);
+      // The app is a single page: it moves to the view itself instead of being reloaded.
+      open.postMessage({ url });
+      return open.focus();
+    })(),
+  );
+});

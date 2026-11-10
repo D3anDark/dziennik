@@ -6,7 +6,7 @@
 {#if r.error}
   <p class="error" role="alert">{r.error}</p>
 {:else if r.data === undefined}
-  <p class="center muted">Ładowanie…</p>
+  <p class="center muted" role="status">Ładowanie…</p>
 {:else if Array.isArray(r.data) && !r.data.length}
   <p class="center muted">{empty}</p>
 {:else}

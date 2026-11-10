@@ -35,6 +35,14 @@
   let busy = $state(false);
   let error = $state('');
 
+  // Closing the tab or reloading with a message half written asks first.
+  $effect(() => {
+    if (!body.trim()) return;
+    const warn = (e) => e.preventDefault();
+    addEventListener('beforeunload', warn);
+    return () => removeEventListener('beforeunload', warn);
+  });
+
   const names = $derived(new Map((book.data ?? []).flatMap((s) => s.people.map((p) => [String(p.Id), p.Label]))));
   const query = $derived(filter.trim().toLowerCase());
 
@@ -84,7 +92,7 @@
       {/if}
       <Async r={book} empty="Brak dostępnych odbiorców.">
         {#snippet children(sections)}
-          <input type="search" placeholder="Szukaj odbiorcy" aria-label="Szukaj odbiorcy" bind:value={filter} />
+          <input type="search" name="receiver" placeholder="Szukaj odbiorcy…" aria-label="Szukaj odbiorcy" autocomplete="off" enterkeyhint="search" bind:value={filter} />
           {#each sections as s (s.label)}
             {@const shown = query ? s.people.filter((p) => p.Label.toLowerCase().includes(query)) : s.people}
             {#if shown.length}
@@ -105,11 +113,11 @@
   {/if}
   <label>
     Temat
-    <input required bind:value={subject} />
+    <input name="subject" autocomplete="off" enterkeyhint="next" required bind:value={subject} />
   </label>
   <label>
     Treść
-    <textarea required rows="8" bind:value={body}></textarea>
+    <textarea name="body" required rows="8" bind:value={body}></textarea>
   </label>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <button class="primary" disabled={busy}>{busy ? 'Wysyłanie…' : 'Wyślij'}</button>

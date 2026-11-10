@@ -8,14 +8,18 @@
   async function load(login) {
     const soft = () => ({});
     // Schools use either behaviour grades or a points system; whichever is off answers with an error.
-    const [g, t, p, pc, u] = await Promise.all([
+    const [g, t, p, pc, cm, u] = await Promise.all([
       synergia(login, 'BehaviourGrades').catch(soft),
       lookup(login, 'BehaviourGrades/Types'),
       synergia(login, 'BehaviourGrades/Points').catch(soft),
       lookup(login, 'BehaviourGrades/Points/Categories'),
+      synergia(login, 'BehaviourGrades/Points/Comments').catch(soft),
       lookup(login, 'Users'),
     ]);
     const [types, cats, users] = [byId(t.Types), byId(pc.Categories), byId(u.Users)];
+    const comments = new Map((cm.Comments ?? []).map((c) => [String(c.Grade?.Id), plain(c.Text)]));
+    /** "od -10 do -5 pkt", or just the value when the category has one. */
+    const range = (c) => (c?.ValueTo == null ? '' : c.ValueFrom === c.ValueTo ? `${c.ValueTo} pkt` : `od ${c.ValueFrom} do ${c.ValueTo} pkt`);
     const grades = (g.Grades ?? []).map((x) => {
       const type = types.get(String(x.GradeType?.Id));
       return {
@@ -27,15 +31,18 @@
     const points = (p.Grades ?? [])
       .map((x) => ({
         id: x.Id,
-        value: Number(x.Value) || 0,
+        // An entry is a number of points or, at schools that grade with symbols, only a ShortName.
+        value: x.Value == null || x.Value === '' ? null : Number(x.Value),
         shown: x.ShortName || x.Value,
-        category: cats.get(String(x.Category?.Id))?.Name ?? '',
-        text: plain(x.Text),
+        category: [cats.get(String(x.Category?.Id))?.Name, range(cats.get(String(x.Category?.Id)))].filter(Boolean).join(', '),
+        text: comments.get(String(x.Id)) ?? '',
         date: x.Date ?? x.AddDate ?? '',
         who: x.AddedBy?.Id ? person(users.get(String(x.AddedBy.Id))) : '',
       }))
       .sort((a, b) => b.date.localeCompare(a.date));
-    return grades.length || points.length ? { grades, points, sum: points.reduce((s, x) => s + x.value, 0) } : [];
+    // A total of some entries only would pass for the real one, so it is shown when every entry has points.
+    const sum = points.some((x) => x.value === null) ? null : points.reduce((s, x) => s + x.value, 0);
+    return grades.length || points.length ? { grades, points, sum } : [];
   }
 
   const data = resource(() => load(login));
@@ -55,7 +62,7 @@
     {/if}
     {#if d.points.length}
       <section class="card">
-        <h2>Punkty: {d.sum}</h2>
+        <h2>{d.sum === null ? 'Punkty i wpisy' : `Punkty: ${d.sum}`}</h2>
         <ul class="entries">
           {#each d.points as x (x.id)}
             <li>

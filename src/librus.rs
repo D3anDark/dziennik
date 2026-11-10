@@ -12,6 +12,7 @@ use crate::store::Account;
 
 pub const PORTAL: &str = "https://portal.librus.pl";
 pub const API: &str = "https://api.librus.pl/3.0";
+pub const SYNERGIA: &str = "https://synergia.librus.pl";
 const CLIENT_ID: &str = "VaItV6oRutdo8fnjJwysnTjVlvaswf52ZqmXsJGP";
 const REDIRECT_URI: &str = "app://librus";
 const MAX_HOPS: usize = 10;

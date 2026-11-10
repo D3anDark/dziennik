@@ -1,7 +1,177 @@
-import { synergia, lookup, byId } from './api.svelte.js';
-import { person, plain } from './util.js';
+import { api, synergia, lookup, byId } from './api.svelte.js';
+import { iso, fmtDate, person, plain, gradeTone } from './util.js';
 
-/** One timetable week: [{ date, lessons }] sorted, each lesson with `room` resolved. */
+/**
+ * Every grading system Synergia has. A school uses one or two and
+ * refuses the rest. `ref` is the field of a grade that points into the `dict` dictionary. `short` systems grade
+ * with words, shown as a two-letter chip. `whole` grades describe the pupil, not a subject.
+ */
+const SYSTEMS = [
+  { path: 'Grades', ref: 'Category', dict: 'Grades/Categories', comments: 'Grades/Comments', averages: 'Grades/Averages' },
+  { path: 'PointGrades', ref: 'Category', dict: 'PointGrades/Categories', comments: 'PointGrades/Comments', averages: 'PointGrades/Averages' },
+  { path: 'TextGrades', ref: 'Category', dict: 'Grades/Categories', short: true },
+  { path: 'DescriptiveGrades', ref: 'Skill', dict: 'DescriptiveGrades/Skills', comments: 'DescriptiveGrades/Comments' },
+  { path: 'DescriptiveTextGrades', ref: 'Skill', dict: 'DescriptiveTextGrades/Skills', short: true },
+  { path: 'DescriptiveGrades/Text', ref: 'GradeGroupId', dict: 'DescriptiveGrades/Text/Categories', short: true, whole: true },
+];
+
+// When a system last came back refused or empty, by "login/path". A school rarely takes up another system, so
+// such a list is asked for again only after a while. Bounded: students times the six paths above.
+const idle = new Map();
+const RECHECK = 15 * 60 * 1000;
+
+/** The grade says what it is itself (seen in live answers); the category flags are the fallback. */
+function final(grade, category) {
+  if (grade.IsFinal || category?.IsFinal) return 'Ocena roczna';
+  if (grade.IsFinalProposition || category?.IsFinalProposition) return 'Proponowana roczna';
+  if (grade.IsSemester || category?.IsSemestral) return 'Ocena semestralna';
+  if (grade.IsSemesterProposition || category?.IsSemestralProposition) return 'Proponowana semestralna';
+  return null;
+}
+
+// Loads in flight, by login: two panels of one screen asking at once share one.
+const loading = new Map();
+
+/**
+ * Grades of every system the school uses: { items, averages } with averages keyed like `item.subject`.
+ * Fails only when no system answered, with the first error that is not a plain refusal.
+ */
+export function grades(login) {
+  if (!loading.has(login)) loading.set(login, loadGrades(login).finally(() => loading.delete(login)));
+  return loading.get(login);
+}
+
+async function loadGrades(login) {
+  const lists = await Promise.all(
+    SYSTEMS.map(async (s) => {
+      const key = `${login}/${s.path}`;
+      if (Date.now() - (idle.get(key) ?? 0) < RECHECK) return [];
+      try {
+        const list = (await synergia(login, s.path)).Grades ?? [];
+        if (!list.length) idle.set(key, Date.now());
+        return list;
+      } catch (e) {
+        if (/^http_40[34]$/.test(e.message)) idle.set(key, Date.now());
+        return e;
+      }
+    }),
+  );
+  if (lists.every((l) => l instanceof Error)) throw lists.find((e) => !/^http_40[34]$/.test(e.message)) ?? lists[0];
+  const soft = () => ({});
+  const [subjects, users] = await Promise.all([
+    lookup(login, 'Subjects').then((r) => byId(r.Subjects)),
+    lookup(login, 'Users').then((r) => byId(r.Users)),
+  ]);
+  const items = [];
+  const averages = new Map();
+  await Promise.all(
+    SYSTEMS.map(async (s, i) => {
+      if (!lists[i].length) return;
+      const [d, c, a] = await Promise.all([
+        s.dict ? lookup(login, s.dict) : {},
+        s.comments ? synergia(login, s.comments).catch(soft) : {},
+        s.averages ? synergia(login, s.averages).catch(soft) : {},
+      ]);
+      const [dict, comments] = [byId(d.Categories ?? d.Skills), byId(c.Comments)];
+      for (const av of a.Averages ?? []) averages.set(String(av.Subject?.Id), av);
+      for (const gr of lists[i]) {
+        const ref = gr[s.ref];
+        const category = dict.get(String(ref?.Id ?? ref));
+        const full = String(gr.Map ?? gr.RealGradeValue ?? gr.Grade ?? '');
+        const kind = final(gr, category);
+        // A semester or year grade is one line of its own and stays whole; the rest share a row of chips.
+        const value = s.short && full.length > 2 && !kind ? full.slice(0, 2).toUpperCase() : full;
+        items.push({
+          id: `${s.path}/${gr.Id}`,
+          subject: s.whole ? 'whole' : String(gr.Subject?.Id),
+          name: s.whole ? 'Oceny opisowe' : (subjects.get(String(gr.Subject?.Id))?.Name ?? 'Inne'),
+          value,
+          // Only the 1 to 6 scale has colours that mean something.
+          tone: s.path === 'Grades' ? gradeTone(value) : 'g0',
+          text: [value === full ? '' : full, gr.Phrase].map(plain).filter(Boolean).join(' '),
+          date: gr.Date ?? gr.AddDate,
+          added: gr.AddDate ?? '',
+          semester: s.whole ? 0 : Number(gr.Semester) === 2 ? 2 : 1,
+          category: [category?.Name, category?.ValueTo != null && `${category.ValueFrom ?? 0}–${category.ValueTo} pkt`].filter(Boolean).join(', '),
+          weight: category?.CountToTheAverage ? category.Weight : null,
+          teacher: gr.AddedBy?.Id ? person(users.get(String(gr.AddedBy.Id))) : '',
+          comment: (gr.Comments ?? []).map((x) => plain(comments.get(String(x.Id))?.Text)).filter(Boolean).join(' '),
+          kind,
+        });
+      }
+    }),
+  );
+  return { items, averages };
+}
+
+/** What a substitution or a move changed, from the Org* and New* fields of the lesson. */
+function change(l, date, users, subjects) {
+  const now = [l.Subject?.Name, l.Teacher && person(l.Teacher)];
+  const names = (subject, teacher) =>
+    [subjects.get(String(subject?.Id))?.Name, users.has(String(teacher?.Id)) && person(users.get(String(teacher.Id)))]
+      .filter((x) => x && !now.includes(x))
+      .join(', ');
+  const [was, next] = [names(l.OrgSubject, l.OrgTeacher), names(l.NewSubject, l.NewTeacher)];
+  return [
+    was && `zamiast: ${was}`,
+    next && `zmiana na: ${next}`,
+    l.OrgDate && l.OrgDate !== date && `przeniesiona z ${fmtDate(l.OrgDate)}`,
+    l.NewDate && l.NewDate !== date && `przeniesiona na ${fmtDate(l.NewDate)}`,
+    plain(l.SubstitutionNote),
+  ]
+    .filter(Boolean)
+    .join('; ');
+}
+
+/** What a change is called (new, changed, removed) and where it shows, by the resource type of the change feed. */
+const term = ['Nowy termin', 'Zmieniony termin', 'Usunięty termin', 'terminarz'];
+const plan = ['Zmiana w planie lekcji', 'Zmiana w planie lekcji', 'Zmiana w planie lekcji', 'plan'];
+const NEWS = {
+  ...Object.fromEntries([...SYSTEMS.map((s) => s.path), 'PartialDescriptiveGrades'].map((p) => [p, ['Nowa ocena', 'Zmieniona ocena', 'Usunięta ocena', 'oceny']])),
+  BehaviourGrades: ['Nowa ocena z zachowania', 'Zmieniona ocena z zachowania', 'Usunięta ocena z zachowania', 'zachowanie'],
+  'BehaviourGrades/Points': ['Nowy wpis z zachowania', 'Zmieniony wpis z zachowania', 'Usunięty wpis z zachowania', 'zachowanie'],
+  Attendances: ['Nowy wpis we frekwencji', 'Zmieniony wpis we frekwencji', 'Usunięty wpis we frekwencji', 'frekwencja'],
+  Notes: ['Nowa uwaga', 'Zmieniona uwaga', 'Usunięta uwaga', 'uwagi'],
+  Messages: ['Nowa wiadomość', 'Zmieniona wiadomość', 'Usunięta wiadomość', 'wiadomosci'],
+  SchoolNotices: ['Nowe ogłoszenie', 'Zmienione ogłoszenie', 'Usunięte ogłoszenie', 'ogloszenia'],
+  HomeWorkAssignments: ['Nowe zadanie domowe', 'Zmienione zadanie domowe', 'Usunięte zadanie domowe', 'zadania'],
+  HomeWorks: term,
+  ParentTeacherConferences: term,
+  'Calendars/ClassFreeDays': term,
+  'Calendars/TeacherFreeDays': term,
+  'Calendars/SchoolFreeDays': term,
+  'Calendars/Substitutions': plan,
+  Timetables: plan,
+};
+
+/**
+ * What changed for the student, newest first, as the server collected it from the Librus change feed:
+ * [{ key, at, text, page, grade }]. A new or changed grade that still exists comes with its value and subject.
+ */
+export async function activity(login) {
+  const [{ entries }, marks] = await Promise.all([
+    api(`activity/${encodeURIComponent(login)}`),
+    grades(login).then((g) => new Map(g.items.map((x) => [x.id, x])), () => new Map()),
+  ]);
+  return entries.flatMap((e, i) => {
+    const words = NEWS[e.kind];
+    if (!words) return [];
+    const [text, page] = [words[['Add', 'Edit', 'Delete'].indexOf(e.change)], words[3]];
+    return text ? [{ key: `${e.at}/${i}`, at: e.at, text, page, grade: marks.get(`${e.kind}/${e.resource}`) }] : [];
+  });
+}
+
+/**
+ * The day worth looking at, out of `week()` days: today while a lesson is on or still ahead, otherwise the next
+ * day with lessons. Null when the rest of the week has none. The device clock decides.
+ */
+export function upcomingDay(days, now = new Date()) {
+  const [date, time] = [iso(now), now.toTimeString().slice(0, 5)];
+  const ahead = (d) => d.lessons.some((l) => !l.IsCanceled && (d.date > date || l.HourTo > time));
+  return days.find((d) => d.date >= date && ahead(d)) ?? null;
+}
+
+/** One timetable week: [{ date, lessons }] sorted, each lesson with `room` and `change` resolved. */
 export async function week(login, weekStart) {
   const t = (await synergia(login, `Timetables?weekStart=${weekStart}`)).Timetable ?? {};
   const out = Object.keys(t)
@@ -21,7 +191,17 @@ export async function week(login, weekStart) {
         () => new Map(),
       )
     : new Map();
-  for (const d of out) for (const l of d.lessons) l.room = rooms.get(String(l.Classroom?.Id))?.Symbol ?? '';
+  // Names behind the Org*/New* references; most weeks have none, so the dictionaries load only when needed.
+  const refs = out.some((d) => d.lessons.some((l) => l.OrgSubject || l.OrgTeacher || l.NewSubject || l.NewTeacher));
+  const [users, subjects] = refs
+    ? await Promise.all([lookup(login, 'Users').then((r) => byId(r.Users)), lookup(login, 'Subjects').then((r) => byId(r.Subjects))])
+    : [new Map(), new Map()];
+  for (const d of out) {
+    for (const l of d.lessons) {
+      l.room = rooms.get(String(l.Classroom?.Id))?.Symbol ?? '';
+      l.change = change(l, d.date, users, subjects);
+    }
+  }
   return out;
 }
 

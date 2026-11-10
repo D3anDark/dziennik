@@ -4,6 +4,7 @@
   import Async from './Async.svelte';
   import Rich from './Rich.svelte';
   import Icon from './Icon.svelte';
+  import Files from './Files.svelte';
 
   let { login } = $props();
   const t = today();
@@ -27,6 +28,8 @@
         teacher: x.Teacher?.Id ? person(users.get(String(x.Teacher.Id))) : '',
         read: (x.StudentsWhoRead ?? []).length > 0,
         done: (x.StudentsWhoMarkedAsDone ?? []).length > 0,
+        // The field name is misspelled by Librus.
+        files: x.HomeworkAssigmentFiles ?? [],
       }))
       .sort((p, q) => (q.due ?? '').localeCompare(p.due ?? ''));
   }
@@ -69,6 +72,7 @@
         </summary>
         <p class="muted">Zadane {fmtDate(h.given)}{#if h.teacher}, {h.teacher}{/if}</p>
         {#if h.text}<Rich text={h.text} />{/if}
+        {#if h.files.length}<Files link={(f) => synergia(login, `HomeWorkAssignments/Attachment/${h.id}-${f.Id}`)} files={h.files} />{/if}
         {#if !h.done}
           <button class="secondary" disabled={busy === h.id} onclick={() => markDone(h)}>
             <Icon name="done" size={20} />{busy === h.id ? 'Zapisywanie…' : 'Oznacz jako wykonane'}

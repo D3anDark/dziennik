@@ -18,5 +18,7 @@ for _ in $(seq 30); do
   curl -sfo /dev/null 127.0.0.1:19222/json/version && curl -sfo /dev/null 127.0.0.1:18081/ && break
   sleep 0.3
 done
-timeout 120 node "$here/drive.mjs" 19222 "$shots" http://127.0.0.1:18081 "$MOCK" | tee "$tmp/run.log"
-! grep -qE '^FAIL|^PROBLEMS' "$tmp/run.log"
+# A driver that crashes or is cut off prints no FAIL line, so the run also has to reach its last line.
+timeout 240 node "$here/drive.mjs" 19222 "$shots" http://127.0.0.1:18081 "$MOCK" >"$tmp/run.log" 2>&1 || :
+cat "$tmp/run.log"
+! grep -qE '^FAIL|^PROBLEMS' "$tmp/run.log" && grep -qx 'no console errors/exceptions' "$tmp/run.log"

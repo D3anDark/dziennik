@@ -17,6 +17,17 @@ export const mondayOf = (s) => shift(s, -((parse(s).getDay() + 6) % 7));
 export const fmtDay = (s) => parse(s).toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
 export const fmtDate = (s) =>
   s ? parse(s).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+/** How long ago, in the words a list of news uses: "9 min", "3 godz.", "wczoraj", then the date. */
+export function ago(t) {
+  const then = new Date(Number(t) * 1000);
+  const minutes = Math.floor((Date.now() - then) / 60000);
+  if (minutes < 1) return 'teraz';
+  if (minutes < 60) return `${minutes} min`;
+  if (iso(then) === today()) return `${Math.floor(minutes / 60)} godz.`;
+  if (iso(then) === shift(today(), -1)) return 'wczoraj';
+  return then.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', ...(then.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }) });
+}
+
 export const fmtUnix = (t) =>
   new Date(Number(t) * 1000).toLocaleString('pl-PL', { dateStyle: 'medium', timeStyle: 'short' });
 

@@ -21,7 +21,30 @@
   }
 
   const list = resource(() => load(login));
+
+  /** Class and school rows from Classes and Schools; every part is optional, so a refusal just leaves it out. */
+  async function about(login) {
+    const [c, s, u] = await Promise.all([lookup(login, 'Classes'), lookup(login, 'Schools'), lookup(login, 'Users')]);
+    const [cls, school, users] = [c.Class, s.School, byId(u.Users)];
+    const tutors = (cls?.ClassTutors ?? []).filter((t) => users.has(String(t.Id))).map((t) => person(users.get(String(t.Id))));
+    return [
+      ['Klasa', [cls?.Number, cls?.Symbol].filter((x) => x != null).join('')],
+      ['Wychowawca', tutors.join(', ')],
+      ['Szkoła', school?.Name],
+      ['Adres', [[school?.Street, school?.BuildingNumber].filter(Boolean).join(' '), school?.Town].filter(Boolean).join(', ')],
+    ].filter(([, v]) => v);
+  }
+
+  const info = resource(() => about(login));
 </script>
+
+{#if info.data?.length}
+  <ul class="card totals">
+    {#each info.data as [label, value] (label)}
+      <li><span>{label}</span><span class="muted">{value}</span></li>
+    {/each}
+  </ul>
+{/if}
 
 <Async r={list} empty="Brak przypisanych nauczycieli.">
   {#snippet children(items)}

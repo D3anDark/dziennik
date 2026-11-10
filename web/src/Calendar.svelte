@@ -3,6 +3,7 @@
   import Icon from './Icon.svelte';
   import { today } from './util.js';
   import { monthEvents } from './data.js';
+  import { swipe } from './swipe.js';
   import Async from './Async.svelte';
   import Events from './Events.svelte';
 
@@ -28,8 +29,10 @@
 </div>
 <h2 class="month">{label}</h2>
 
-<Async r={events} empty="Brak wpisów w tym miesiącu.">
-  {#snippet children(list)}
-    <Events events={list} today={t} />
-  {/snippet}
-</Async>
+<div class="swipe" use:swipe={{ prev: () => move(-1), next: () => move(1) }}>
+  <Async r={events} empty="Brak wpisów w tym miesiącu.">
+    {#snippet children(list)}
+      <Events events={list} today={t} />
+    {/snippet}
+  </Async>
+</div>

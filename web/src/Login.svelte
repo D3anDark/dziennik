@@ -30,11 +30,11 @@
   <p class="muted">Zaloguj się kontem LIBRUS (e-mail i hasło z portal.librus.pl).</p>
   <label>
     E-mail
-    <input type="email" autocomplete="username" required bind:value={email} />
+    <input type="email" name="email" autocomplete="username" autocapitalize="none" spellcheck="false" enterkeyhint="next" required bind:value={email} />
   </label>
   <label>
     Hasło
-    <input type="password" autocomplete="current-password" required bind:value={password} />
+    <input type="password" name="password" autocomplete="current-password" enterkeyhint="go" required bind:value={password} />
   </label>
   {#if error}
     <p class="error" role="alert">{error}</p>

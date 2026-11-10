@@ -1,13 +1,23 @@
 <script>
-  import { synergia, resource, byId, message, refreshUnread } from './api.svelte.js';
-  import { fmtUnix, person, plain, initials } from './util.js';
+  import { untrack } from 'svelte';
+  import { synergia, resource, byId, message } from './api.svelte.js';
+  import { viaWeb, useWeb, folder as webFolder, message as webMessage, fileLink, refreshUnread } from './webmail.js';
+  import { fmtUnix, ago, person, plain, initials } from './util.js';
   import Async from './Async.svelte';
   import Rich from './Rich.svelte';
   import Icon from './Icon.svelte';
   import Compose from './Compose.svelte';
+  import Files from './Files.svelte';
 
   /** `arg` from the route: `<id>` opens a message, `nowa` writes one, `nowa/<id>` answers <id>. */
   let { login, arg } = $props();
+
+  /**
+   * An account without Mobilne Dodatki gets no messages from the API, so they are read from the Synergia website
+   * (webmail.js): both folders and attachments, no writing. Their ids carry the folder, like "5-123".
+   */
+  let onWeb = $state(untrack(() => viaWeb(login)));
+  const fromWeb = (id) => String(id).includes('-');
 
   const LIMIT = 300;
   // ponytail: stops after 1200 messages; page backwards from the newest if an account ever has more.
@@ -26,7 +36,7 @@
     return byId(res.flat().filter(Boolean));
   }
 
-  async function loadList(login) {
+  async function apiList(login) {
     const all = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
       const r = await synergia(login, `Messages?${QUERY}&afterId=1&limit=${LIMIT}&getAllTypes=1&page=${page}`);
@@ -52,7 +62,17 @@
       .sort((p, q) => Number(q.date) - Number(p.date));
   }
 
+  /** The first refusal switches this student to the website; `onWeb` then runs the list again from there. */
+  const loadList = (login) =>
+    apiList(login).catch((e) => {
+      if (e.message !== 'premium') throw e;
+      useWeb(login);
+      onWeb = true;
+      return [];
+    });
+
   async function loadOne(login, id) {
+    if (fromWeb(id)) return webMessage(login, id);
     // Opening a message through the API marks it read.
     const m = (await synergia(login, `Messages/${id}?${QUERY}`)).Message;
     if (!m) throw new Error('http_404');
@@ -64,17 +84,21 @@
       to: (m.Receivers ?? []).map((x) => person(users.get(String(x.Id)))).join(', '),
       date: m.SendDate,
       body: plain(m.Body),
-      files: flag(m.AddedFiles) || (m.MessageFiles ?? []).length > 0,
+      files: m.MessageFiles ?? [],
+      // Flagged as having attachments, but the list did not come with the message.
+      unlisted: flag(m.AddedFiles) && !m.MessageFiles?.length,
     };
   }
 
-  const route = $derived(/^(?:(\d+)|nowa(?:\/(\d+))?)$/.exec(arg ?? ''));
+  const route = $derived(/^(?:((?:\d-)?\d+)|nowa(?:\/(\d+))?)$/.exec(arg ?? ''));
   const id = $derived(route?.[1] ?? route?.[2] ?? null);
   const composing = $derived(Boolean(route) && route[1] === undefined);
   let folder = $state('in');
   let reload = $state(0);
   let sentId = $state(null);
-  const data = resource(() => (reload, id ? loadOne(login, id) : composing ? Promise.resolve(null) : loadList(login)));
+  const data = resource(
+    () => (reload, id ? loadOne(login, id) : composing ? Promise.resolve(null) : onWeb ? webFolder(login, folder) : loadList(login)),
+  );
 
   let marking = $state(false);
   let markError = $state('');
@@ -85,7 +109,7 @@
     markError = '';
     const queue = list.filter((m) => m.unread).map((m) => m.id);
     const worker = async () => {
-      while (queue.length) await synergia(login, `Messages/${queue.pop()}?${QUERY}`);
+      while (queue.length) await (onWeb ? webMessage(login, queue.pop()) : synergia(login, `Messages/${queue.pop()}?${QUERY}`));
     };
     try {
       await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
@@ -118,18 +142,20 @@
       <article class="card message">
         <h2>{m.title}</h2>
         <div class="meta">
-          <span class="avatar small" aria-hidden="true">{initials(m.from)}</span>
+          <span class="avatar small" aria-hidden="true">{initials(m.from || m.to)}</span>
           <p>
-            Od: <strong>{m.from}</strong><br />
-            <span class="muted">Do: {m.to}<br />{fmtUnix(m.date)}</span>
+            {#if m.from}Od: <strong>{m.from}</strong><br />{/if}
+            <span class="muted">{#if m.to}Do: {m.to}<br />{/if}{fmtUnix(m.date)}</span>
           </p>
         </div>
         <Rich text={m.body} />
-        {#if m.files}
+        {#if m.files.length}
+          <Files link={(f) => (fromWeb(id) ? fileLink(login, id, f) : synergia(login, `Messages/Attachment/${id}-${f.Id}`))} files={m.files} />
+        {:else if m.unlisted}
           <p class="note-line muted"><Icon name="paperclip" size={18} />Wiadomość ma załączniki. Pobierzesz je w aplikacji lub na stronie Librusa.</p>
         {/if}
       </article>
-      <a class="button" href="#/wiadomosci/nowa/{id}"><Icon name="reply" size={20} />Odpowiedz</a>
+      {#if !fromWeb(id)}<a class="button" href="#/wiadomosci/nowa/{id}"><Icon name="reply" size={20} />Odpowiedz</a>{/if}
     {/snippet}
   </Async>
 {:else}
@@ -138,8 +164,13 @@
       <button aria-pressed={folder === 'in'} onclick={() => (folder = 'in')}>Odebrane</button>
       <button aria-pressed={folder === 'out'} onclick={() => (folder = 'out')}>Wysłane</button>
     </div>
-    <a class="button primary" href="#/wiadomosci/nowa"><Icon name="pencil" size={20} />Napisz</a>
+    {#if !onWeb}<a class="button primary" href="#/wiadomosci/nowa"><Icon name="pencil" size={20} />Napisz</a>{/if}
   </div>
+  {#if onWeb}
+    <p class="note-line muted">
+      Konto bez Mobilnych Dodatków: wiadomości są czytane ze strony Synergii. Pisać i odpowiadać można tylko tam.
+    </p>
+  {/if}
   <Async r={data} empty="Brak wiadomości.">
     {#snippet children(list)}
       {@const shown = list.filter((m) => m.sent === (folder === 'out'))}
@@ -156,11 +187,11 @@
           {#each shown as m (m.id)}
             <li class:unread={m.unread}>
               <a href="#/wiadomosci/{m.id}">
-                <span class="avatar small" aria-hidden="true">{initials(m.who)}</span>
                 <span class="grow">
-                  <span class="subject">{m.title}</span>
-                  <small class="muted">{folder === 'out' ? 'Do: ' : ''}{m.who}, {fmtUnix(m.date)}</small>
+                  <span class="who">{folder === 'out' ? 'Do: ' : ''}{m.who}</span>
+                  <small class="subject">{m.title}</small>
                 </span>
+                <time title={fmtUnix(m.date)}>{ago(m.date)}</time>
               </a>
             </li>
           {/each}

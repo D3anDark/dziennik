@@ -2,8 +2,8 @@
   import { fmtDay, fmtDate } from './util.js';
   import Rich from './Rich.svelte';
 
-  /** Calendar entries from `monthEvents()`, grouped under their start day. */
-  let { events, today } = $props();
+  /** Calendar entries from `monthEvents()`, grouped under their start day. `flat` drops the card of each day, for use inside a panel. */
+  let { events, today, flat = false } = $props();
 
   // Map.groupBy needs iOS 17.4+; a loop keeps older phones working.
   const days = $derived.by(() => {
@@ -17,8 +17,8 @@
 </script>
 
 {#each days as [date, list] (date)}
-  <section class="card" class:today={date === today}>
-    <h2>{fmtDay(date)}</h2>
+  <section class:card={!flat} class:today={!flat && date === today}>
+    <svelte:element this={flat ? 'h3' : 'h2'} class:section={flat}>{fmtDay(date)}</svelte:element>
     <ul class="events">
       {#each list as e (e.id)}
         <li class={e.kind}>

@@ -1,18 +1,46 @@
 import datetime as dt, json, sys
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit, parse_qs
+from urllib.parse import urlsplit, parse_qs, unquote
 
 DIST, PORT = sys.argv[1], int(sys.argv[2])
 STATE = {"logged": False, "log": []}
-ME = {"email": "rodzic@example.com", "accounts": [
+ME = {"email": "rodzic@example.com", "admin": True, "push": "BAAA" + "A" * 83, "accounts": [
     {"login": "1001u", "name": "Jan Testowy", "state": "active"},
     {"login": "2002u", "name": "Ala Testowa", "state": "active"}]}
+ACCESS = {"fixed": ["rodzic@example.com"], "emails": [{"email": "ala@example.com", "added": 1762675200, "active": True}]}
+FEEDS = {"feeds": [{"login": "1001u", "checked": 1762675200, "error": ""}, {"login": "2002u", "checked": 1762675200, "error": "relogin"}]}
+# The second student: no Mobilne Dodatki, and a school that also grades with points, words and descriptions.
+OTHER = {
+    "Me": {"Me": {"Account": {"Login": "2002u", "GroupId": 5, "IsPremium": False, "IsPremiumDemo": False}}},
+    "PointGrades": {"Grades": [{"Id": 1, "Subject": {"Id": "7"}, "Category": {"Id": 9}, "AddedBy": {"Id": 1}, "Grade": "5",
+                                "Date": "2026-10-20", "AddDate": "2026-10-20 10:00:00", "Semester": 1, "Comments": [{"Id": 4}]}]},
+    "PointGrades/Categories": {"Categories": [{"Id": 9, "Name": "Sprawdzian", "ValueFrom": 0, "ValueTo": 20, "Weight": 1}]},
+    "PointGrades/Comments": {"Comments": [{"Id": 4, "Text": "Brawo"}]},
+    "PointGrades/Averages": {"Averages": [{"Subject": {"Id": 7}, "Semester1": "71.50", "Semester2": "0.00", "FullYear": "0.00"}]},
+    "TextGrades": {"Grades": [{"Id": 1, "Subject": {"Id": 5}, "AddedBy": {"Id": 2}, "Grade": "zaliczono",
+                               "Date": "2026-10-21", "AddDate": "2026-10-21 10:00:00", "Semester": 2},
+                              {"Id": 2, "Subject": {"Id": "7"}, "AddedBy": {"Id": 2}, "Grade": "zwolniony", "IsSemester": True,
+                               "Date": "2026-10-24", "AddDate": "2026-10-24 10:00:00", "Semester": 1}]},
+    "DescriptiveGrades": {"Grades": [{"Id": 1, "Subject": {"Id": 5}, "Skill": {"Id": 3}, "AddedBy": {"Id": 1}, "Map": "B",
+                                      "Phrase": "Czyta płynnie", "Date": "2026-10-22", "AddDate": "2026-10-22 10:00:00", "Semester": 2}]},
+    "DescriptiveGrades/Skills": {"Skills": [{"Id": 3, "Name": "Czytanie"}]},
+    "DescriptiveGrades/Text": {"Grades": [{"Id": 1, "GradeGroupId": 8, "Grade": "Uczeń pracuje wytrwale.", "AddedBy": {"Id": 1},
+                                           "AddDate": "2026-10-23 10:00:00"}]},
+    "DescriptiveGrades/Text/Categories": {"Categories": [{"Id": 8, "Name": "Ocena śródroczna"}]},
+    # Behaviour entries as a real school sends them: a symbol without points next to one with points.
+    "BehaviourGrades/Points": {"Grades": [
+        {"Id": 1, "Category": {"Id": 1}, "ShortName": "WC", "Date": "2026-10-05", "AddedBy": {"Id": 1}, "Comments": [{"Id": 7}], "Semester": 1},
+        {"Id": 2, "Category": {"Id": 2}, "Value": "5", "Date": "2026-10-12", "AddedBy": {"Id": 1}, "Semester": 1}]},
+    "BehaviourGrades/Points/Categories": {"Categories": [{"Id": 1, "Name": "Wagary", "ValueFrom": -10, "ValueTo": -5},
+                                                         {"Id": 2, "Name": "Konkurs", "ValueFrom": 5, "ValueTo": 5}]},
+    "BehaviourGrades/Points/Comments": {"Comments": [{"Id": 7, "Grade": {"Id": 1}, "Text": "Dwie godziny"}]},
+}
 
 def lesson(no, frm, to, sid, name, room, **kw):
     return {"LessonNo": str(no), "HourFrom": frm, "HourTo": to, "Subject": {"Id": sid, "Name": name},
             "Teacher": {"FirstName": "Anna", "LastName": "Nowak"}, "Classroom": {"Id": room},
-            "IsCanceled": kw.get("c", False), "IsSubstitutionClass": kw.get("s", False)}
+            "IsCanceled": kw.get("c", False), "IsSubstitutionClass": kw.get("s", False), **kw.get("x", {})}
 
 def timetable(start):
     d0 = dt.date.fromisoformat(start)
@@ -22,7 +50,8 @@ def timetable(start):
         out[day] = [] if i >= 5 else [
             [lesson(1, "08:00", "08:45", "5", "Matematyka", "12")], [],
             [lesson(3, "09:50", "10:35", 7, "Język polski", 13, c=(i == 1))],
-            [lesson(2, "08:55", "09:40", "9", "Fizyka", "12", s=(i == 2))]]
+            [lesson(2, "08:55", "09:40", "9", "Fizyka", "12", s=(i == 2), x={} if i != 2 else {
+                "OrgSubject": {"Id": "7"}, "OrgTeacher": {"Id": 2}, "SubstitutionNote": "Przynieście zeszyty"})]]
     return {"Timetable": out}
 
 S = {
@@ -34,6 +63,7 @@ S = {
         {"Id": 5, "Grade": "2", "Date": "2026-10-11", "Semester": 1, "Subject": {"Id": "404"}, "Category": {"Id": 1}},
         {"Id": 6, "Grade": "4", "Date": "2026-10-12", "Semester": 1, "Subject": {"Id": "405"}, "Category": {"Id": 1}}]},
     "Subjects": {"Subjects": [{"Id": 5, "Name": "Matematyka"}, {"Id": "7", "Name": "Język polski"}]},
+    "Me": {"Me": {"Account": {"Login": "1001u", "GroupId": 8, "IsPremium": True}}},
     "Grades/Categories": {"Categories": [
         {"Id": 1, "Name": "Sprawdzian", "Weight": 3, "CountToTheAverage": True},
         {"Id": "2", "Name": "Kartkówka", "Weight": 2, "CountToTheAverage": True},
@@ -86,6 +116,62 @@ GROUPS = {
         {"Label": "Matematyka", "Receivers": [{"Id": 1, "Label": "Anna Nowak"}, {"Id": "2", "Label": "Piotr Zielinski"}]}]},
 }
 
+# The message module of the Synergia website, in the markup the real one had in November 2026.
+WEB_READ = {"301": False}
+
+def web_shell(inner):
+    unread = "" if WEB_READ["301"] else " (1)"
+    return ('<html><body><table class="stretch container-message"><tr><td class="message-folders"><table class="message-folders">'
+            f'<tr><td><a href="/wiadomosci/5">odebrane{unread}</a></td></tr><tr><td><a href="/wiadomosci/6">wysłane</a></td></tr>'
+            f'</table></td><td>{inner}</td></tr></table></body></html>')
+
+def web_row(folder, mid, who, title, date, unread=False, files=False):
+    bold = ' style="font-weight: bold;"' if unread else ""
+    icon = '<img src="/assets/img/attachment.png" class="tooltip" />' if files else ""
+    link = f'/wiadomosci/1/{folder}/{mid}/f0'
+    return (f'<tr class="line0"><td class="micro center"><input class="wiadomoscLista" type="checkbox" value="{mid}" name="wiadomosci[]" ></td>'
+            f'<td class="micro center">{icon}</td><td{bold} ><a href="{link}">{who}</a></td><td{bold} ><a href="{link}">{title}</a></td>'
+            f'<td class="medium center"{bold} >{date}</td><td class="micro center"></td></tr>')
+
+def web_list(who, rows):
+    return web_shell('<table class="decorated stretch"><thead><tr><td class="micro"></td><td class="micro">&nbsp;</td>'
+                     f'<td><a href="javascript:void(0);">{who}</a></td><td>Temat</td><td>Wysłano</td><td class="micro">&nbsp;</td></tr></thead>'
+                     f'<tbody>{"".join(rows)}</tbody><tfoot><tr><td colspan="6">&nbsp;</td></tr></tfoot></table>')
+
+def web_message(rows, content, after):
+    head = "".join(f'<tr><td class="medium left"><b>{k}</b></td><td class="left">{v}</td></tr>' for k, v in rows)
+    return web_shell(f'<table class="stretch">{head}</table><div class="container-message-content">{content}</div>{after}')
+
+def website(path):
+    if path == "wiadomosci/5":
+        return {"html": web_list("Nadawca", [
+            web_row(5, 301, "Nowak Anna (nauczyciel)", "Zebranie", "2026-11-09 08:15:00", unread=not WEB_READ["301"]),
+            web_row(5, 300, "Zieliński Piotr", "Regulamin", "2026-11-02 10:00:00", files=True)])}
+    if path == "wiadomosci/6":
+        return {"html": web_list("Adresat", [web_row(6, 400, "Nowak Anna (nauczyciel)", "Pytanie o wycieczkę", "2026-11-03 17:30:00")])}
+    if path == "wiadomosci/1/5/301/f0":
+        WEB_READ["301"] = True
+        return {"html": web_message(
+            [("Nadawca", "Nowak Anna (nauczyciel)"), ("Temat", "Zebranie"), ("Wysłano", "2026-11-09 08:15:00")],
+            'Dzień dobry,<br /><br />zebranie we wtorek: <a href="https://example.com/z" target="_blank">https://example.com/z</a>'
+            '<script>window.pwned=3</script><img src=x onerror="window.pwned=4">',
+            '<table class="stretch"><tr><td class="medium"><b>Przeczytano</b></td><td class="left">2026-11-09 09:00:00</td></tr></table>')}
+    if path == "wiadomosci/1/5/300/f0":
+        return {"html": web_message(
+            [("Nadawca", "Zieliński Piotr"), ("Temat", "Regulamin"), ("Wysłano", "2026-11-02 10:00:00")], "W załączniku.",
+            '<table><tr><td colspan="2" class="left"><b>Pliki:</b></td></tr><tr><td><!-- icon --><img src="/assets/img/filetype_icons/pdf.png"/>'
+            '<!-- name -->regulamin.pdf</td><td>&nbsp;<!-- download button --><a href="javascript:void(0);">'
+            '<img src="/assets/img/homework_files_icons/download.png" class="" onClick=" otworz_w_nowym_oknie( &quot;\\/wiadomosci\\/pobierz_zalacznik\\/300\\/9&quot;, &quot;o2&quot;, 420, 250 ) " />'
+            '</a></td></tr></table>')}
+    if path == "wiadomosci/1/6/400/f0":
+        return {"html": web_message(
+            [("Temat", "Pytanie o wycieczkę"), ("Wysłano", "2026-11-03 17:30:00")], "Czy wycieczka jest aktualna?",
+            '<table class="stretch"><tr><td colspan="3"><b>Przeczytano</b></td></tr>'
+            '<tr><td class="left big double">Nowak Anna (nauczyciel)</td><td class="left">2026-11-03 18:00:00</td></tr></table>')}
+    if path == "wiadomosci/pobierz_zalacznik/300/9":
+        return {"DownloadUrl": "https://sandbox.librus.pl/GetFile/key"}
+    return None
+
 def users_by(ids):
     known = {u["Id"] if isinstance(u["Id"], str) else str(u["Id"]): u for u in S["Users"]["Users"]}
     known["9"] = {"Id": 9, "FirstName": "Jan", "LastName": "Testowy"}
@@ -115,6 +201,7 @@ def dynamic(rest, q):
     if rest == "HomeWorkAssignments":
         out = {"HomeWorkAssignments": [
             {"Id": 1, "Topic": "Wypracowanie", "Text": "Opis <b>postaci</b>. https://example.com/a",
+             "HomeworkAssigmentFiles": [{"Id": 3, "Name": "karta.pdf"}],
              "Date": ahead(-3), "DueDate": ahead(3), "Lesson": {"Id": "2"}, "Teacher": {"Id": 2}},
             {"Id": 2, "Topic": "Stare", "Text": "", "Date": "2026-09-01", "DueDate": "2026-09-08", "Lesson": {"Id": 1}, "Teacher": {"Id": 1}}]}
         for h in out["HomeWorkAssignments"]:
@@ -141,6 +228,21 @@ def dynamic(rest, q):
         return {"Message": {"Id": "11", "Subject": json.dumps("Wycieczka"), "SendDate": 1762675200, "Sender": {"Id": 1},
                             "Receivers": [{"Id": 9}], "AddedFiles": "1",
                             "Body": json.dumps("Dzien dobry,<br>szczegoly: https://example.com/x<img src=x onerror=\"window.pwned=1\"><script>window.pwned=2</script>")}}
+    if rest == "Messages/12":
+        return {"Message": {"Id": "12", "Subject": json.dumps("Stara"), "SendDate": 1762675200, "Sender": {"Id": "2"},
+                            "Receivers": [{"Id": 9}], "AddedFiles": "1", "Body": json.dumps("W załączniku."),
+                            "MessageFiles": [{"Id": 5, "Name": "regulamin.pdf"}, {"Id": 6, "Name": ""}]}}
+    if rest in ("Messages/Attachment/12-5", "HomeWorkAssignments/Attachment/1-3"):
+        return {"DownloadUrl": "https://files.example/" + rest.rsplit("/", 1)[1]}
+    if rest == "Messages/Attachment/12-6":
+        return {"DownloadUrl": "javascript:alert(1)"}
+    if rest == "Realizations":
+        return {"Realizations": [{"Id": 100, "Date": ahead(-1), "LessonNo": "2", "Topic": "Lektura", "Lesson": {"Id": "2"}}] + [
+            {"Id": i, "Date": ahead(-i), "LessonNo": "1", "Topic": f"Ułamki {i}", "Lesson": {"Id": 1}} for i in range(1, 13)]}
+    if rest == "Classes":
+        return {"Class": {"Id": 3, "Number": 2, "Symbol": "a", "ClassTutors": [{"Id": 1}]}}
+    if rest == "Schools":
+        return {"School": {"Id": 1, "Name": "SP nr 1", "Street": "Szkolna", "BuildingNumber": "5", "Town": "Kraków"}}
     if rest == "Messages/ReceiversGroup":
         return {"ReceiversGroup": [{"Id": "tutors"}, {"Id": "teachers"}, {"Id": "parents"}, {"Id": "broken"}]}
     if rest.startswith("Messages/ReceiversGroup/") and rest.rsplit("/", 1)[1] in GROUPS:
@@ -170,6 +272,13 @@ class H(SimpleHTTPRequestHandler):
         if p == "/api/logout":
             STATE["logged"] = False; self.send_response(204); self.end_headers(); return
         STATE["log"][-1] += " " + json.dumps(body, sort_keys=True)
+        if p == "/api/push" and STATE["logged"]:
+            self.send_response(204); self.end_headers(); return
+        if p == "/api/admin/emails" and STATE["logged"]:
+            if "@" not in body.get("email", "") or "." not in body["email"].split("@")[1]:
+                return self.send(400, {"error": "bad_email"})
+            ACCESS["emails"].insert(0, {"email": body["email"].strip().lower(), "added": 1762675200, "active": False})
+            return self.send(200, ACCESS)
         rest = p.split("/", 4)[4] if p.startswith("/api/s/") else ""
         if not STATE["logged"] or self.headers.get("content-type") != "application/json":
             return self.send(401, {"error": "unauthorized"})
@@ -182,12 +291,29 @@ class H(SimpleHTTPRequestHandler):
             SENT["15"] = body
             return self.send(200, {"Message": {"Id": 15}})
         self.send(404, {"error": "not_found"})
+    def do_DELETE(self):
+        p = urlsplit(self.path).path
+        STATE["log"].append("DELETE " + p)
+        if p == "/api/push" and STATE["logged"]:
+            n = int(self.headers.get("content-length") or 0)
+            STATE["log"][-1] += " " + self.rfile.read(n).decode()
+            self.send_response(204); self.end_headers(); return
+        if not STATE["logged"] or not p.startswith("/api/admin/emails/"):
+            return self.send(401, {"error": "unauthorized"})
+        ACCESS["emails"] = [e for e in ACCESS["emails"] if e["email"] != unquote(p.rsplit("/", 1)[1])]
+        self.send(200, ACCESS)
     def do_GET(self):
         u = urlsplit(self.path)
         if u.path == "/__log":
             return self.send(200, STATE["log"])
         if u.path == "/__unread":
             MSG_READ["11"] = False
+            return self.send(200, {})
+        if u.path == "/__admin":
+            ME["admin"] = False
+            return self.send(200, {})
+        if u.path == "/__twins":
+            ME["accounts"][1]["name"] = ME["accounts"][0]["name"]
             return self.send(200, {})
         if not u.path.startswith("/api/"):
             return super().do_GET()
@@ -196,9 +322,33 @@ class H(SimpleHTTPRequestHandler):
             return self.send(401, {"error": "unauthorized"})
         if u.path == "/api/me":
             return self.send(200, ME)
+        if u.path == "/api/admin/emails":
+            return self.send(200, ACCESS)
+        if u.path == "/api/push":
+            return self.send(200, FEEDS)
+        if u.path == "/api/activity/1001u":
+            now = int(dt.datetime.now().timestamp())
+            return self.send(200, {"entries": [
+                {"at": now - 600, "kind": "Grades", "change": "Edit", "resource": "2"},
+                {"at": now - 2 * 86400, "kind": "Attendances", "change": "Add", "resource": "5"},
+                {"at": now - 3 * 86400, "kind": "Grades", "change": "Delete", "resource": "999"},
+                {"at": now - 4 * 86400, "kind": "SomethingNew", "change": "Add", "resource": "1"},
+                {"at": now - 5 * 86400, "kind": "Timetables", "change": "Edit", "resource": "8"},
+                {"at": now - 6 * 86400, "kind": "Messages", "change": "Add", "resource": "11"},
+                {"at": now - 7 * 86400, "kind": "Notes", "change": "Add", "resource": "3"}]})
+        if u.path.startswith("/api/activity/"):
+            return self.send(200, {"entries": []})
         parts = u.path.split("/", 4)
+        if len(parts) == 5 and parts[2] == "w":
+            page = website(parts[4]) if parts[3] == "2002u" else None
+            return self.send(200, page) if page else self.send(400, {"error": "bad_path"})
         if len(parts) == 5 and parts[2] == "s":
             rest = parts[4]
+            if parts[3] == "2002u":
+                if rest.startswith(("Messages", "HomeWorkAssignments", "Notes")):
+                    return self.send(403, {"Status": "Disabled", "MessagePL": "Brak dostępu."})
+                if rest in OTHER:
+                    return self.send(200, OTHER[rest])
             if rest == "Timetables":
                 return self.send(200, timetable(parse_qs(u.query)["weekStart"][0]))
             if rest in S:
@@ -208,6 +358,8 @@ class H(SimpleHTTPRequestHandler):
                 return self.send(200, d)
             if rest.startswith("BehaviourGrades/Points"):
                 return self.send(403, {"error": "http_403"})
+            # What Librus answers for a resource the school does not have.
+            return self.send(404, {"Status": "Error", "Code": "NotFound", "MessagePL": "Nie znaleziono."})
         self.send(404, {"error": "upstream"})
 
 ThreadingHTTPServer(("127.0.0.1", PORT), partial(H, directory=DIST)).serve_forever()
