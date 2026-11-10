@@ -1,0 +1,38 @@
+# Dziennik behind Caddy, which gets and renews the HTTPS certificate for DOMAIN by itself.
+# Started by install.sh:  docker compose --env-file .env -f deploy/compose.yaml up -d --build
+name: dziennik
+
+services:
+  dziennik:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    # The server does not handle signals itself; an init process makes "stop" immediate.
+    init: true
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      # Fixed here so that a hand-written .env cannot move the database off the volume.
+      DB: /data/dziennik.db
+      WEB_DIR: /srv/web
+      BIND: 0.0.0.0:8080
+    volumes:
+      - data:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?brak DOMAIN w .env}
+    volumes:
+      # z: lets the container read the file on hosts with SELinux (Fedora, RHEL); ignored elsewhere.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,z
+      - caddy:/data
+
+volumes:
+  # The database: access list, encrypted Librus tokens, notification key. Back this volume up.
+  data:
+  caddy:

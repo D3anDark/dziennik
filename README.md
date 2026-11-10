@@ -5,7 +5,8 @@ w imieniu użytkownika, trzyma tokeny zaszyfrowane (AES-256-GCM) w SQLite i poś
 `api.librus.pl/3.0`: GET dowolnej ścieżki, POST tylko na listę dozwolonych zapisów (`WRITES` w `src/main.rs`), z treścią
 JSON. Hasło nie jest zapisywane.
 
-Projekt nieoficjalny, niezwiązany z firmą Librus.
+Projekt nieoficjalny, niezwiązany z firmą Librus: zobacz [Zastrzeżenia](#zastrzeżenia). Po co powstał:
+[MANIFEST.md](MANIFEST.md).
 
 Widoki: start (liczniki, plan dnia, aktywność, ostatnie oceny, 14 dni terminarza), aktywność (nowe, zmienione i
 usunięte oceny, wpisy frekwencji, uwagi, wiadomości, terminy, zmiany planu), oceny ze średnimi i komentarzami (zwykłe,
@@ -91,8 +92,22 @@ Tryb deweloperski frontendu: `cd web && npm run dev` (Vite przekierowuje `/api` 
 
 ## Wdrożenie
 
-Ciasteczko sesji ma `Secure`, więc poza `localhost` aplikacja musi stać za HTTPS (np. Caddy lub nginx jako reverse
-proxy na `BIND`). Service worker też wymaga HTTPS.
+Najprościej, na serwerze z Dockerem i domeną, która na niego wskazuje:
+
+```sh
+git clone https://github.com/D3anDark/dziennik.git && cd dziennik
+sh install.sh
+```
+
+Skrypt pyta o domenę i e-mail konta LIBRUS administratora, losuje `SECRET_KEY`, zapisuje `.env` (tylko do odczytu
+dla właściciela), buduje obraz (`deploy/Dockerfile`) i uruchamia aplikację za Caddy, który sam zdobywa i odnawia
+certyfikat HTTPS (`deploy/compose.yaml`). Potrzebne są wolne porty 80 i 443. Uruchomiony ponownie po `git pull`
+aktualizuje aplikację i nie rusza istniejącego `.env`. Baza leży w woluminie Dockera `dziennik_data`: jego i pliku
+`.env` dotyczy kopia zapasowa. Bez pytań: `DOMAIN=dziennik.example.pl ADMIN_EMAIL=ty@example.com sh install.sh`.
+
+Bez Dockera: zbuduj jak w "Uruchomienie" i postaw przed aplikacją własne reverse proxy z HTTPS (np. Caddy lub
+nginx na `BIND`). Ciasteczko sesji ma `Secure`, więc poza `localhost` HTTPS jest konieczny, wymaga go też service
+worker.
 
 ## Testy
 
@@ -105,3 +120,34 @@ z RFC 8291, podpis VAPID oraz cała droga od kanału zmian do odszyfrowanego pow
 dostępem, powiadomienia (subskrypcja na atrapie przeglądarki, prawdziwe zdarzenie push w service workerze), systemy
 oceniania, wiadomości ze strony Synergii, aktywność, odświeżanie, układ na szerokim ekranie, routing, tryb offline,
 wylogowanie. `SHOTS=katalog` zachowuje zrzuty ekranu.
+
+`sh tests/install_test.sh`: `install.sh` na atrapie Dockera: co zapisuje do `.env`, co odrzuca (domena i e-mail ze znakami
+spoza dozwolonych, brak odpowiedzi) i że ponowne uruchomienie nie zmienia klucza.
+
+## Zastrzeżenia
+
+To nie jest opinia prawna.
+
+- **Brak związku z Librus.** Projekt jest nieoficjalny. Nie jest powiązany z Librus sp. z o.o., nie jest przez nią
+  tworzony, wspierany, autoryzowany ani sprawdzany. Nazwy LIBRUS i Synergia należą do tej spółki i są tu użyte tylko
+  po to, by wskazać, z jakim dziennikiem aplikacja współpracuje.
+- **Własny kod.** Aplikacja jest napisana od zera i nie zawiera kodu ani grafik aplikacji Librus. Z serwerami
+  Librusa rozmawia wyłącznie po to, by zalogowany użytkownik mógł korzystać z własnego konta.
+- **Twoje konto, Twoja odpowiedzialność.** Aplikacja loguje się do konta LIBRUS danymi, które podasz, i działa w
+  Twoim imieniu. Regulaminy Librusa dalej Cię obowiązują. Librus może w każdej chwili zmienić albo zablokować dostęp,
+  także do konta. Hasło nie jest zapisywane, ale przechodzi przez serwer, na którym stoi aplikacja: korzystaj tylko
+  z instancji, której operatorowi ufasz.
+- **Operator odpowiada za dane.** Kto uruchamia serwer dla innych osób, przetwarza ich dane osobowe (adres e-mail,
+  zaszyfrowane tokeny, historia zmian w ocenach i frekwencji) i sam odpowiada za obowiązki z RODO oraz za zgodę tych
+  osób, a przy niepełnoletnich także ich rodziców.
+- **Bez obciążania Librusa.** Aplikacja jest przeznaczona dla małej, zamkniętej grupy. Nie używaj jej do masowego
+  pobierania danych ani do udostępniania cudzych kont.
+- **Bez gwarancji.** Oprogramowanie jest dostarczane "tak jak jest", na warunkach z pliku [LICENSE](LICENSE).
+
+Sprawy prawne, w tym żądanie usunięcia treści: contact@unisic.app.
+
+## Licencja
+
+[MIT](LICENSE): każdy może wziąć ten kod i użyć go, jak chce, także zmienić go i rozpowszechniać dalej. Jedyny
+warunek: zostaje nota o autorach i treść licencji. Autorzy: sfrustrowani uczniowie oraz zawiedzeni nauczyciele
+i rodzice. Licencja obejmuje kod tego repozytorium, nie nazwy ani dane Librusa.
