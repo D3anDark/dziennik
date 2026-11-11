@@ -36,17 +36,35 @@ async function store(name, req, res) {
   await trim(cache, MAX_ENTRIES[name]);
 }
 
-async function networkFirst(event, name) {
+/**
+ * Opening the app waits for two answers, the page and who is signed in (/api/me). On a link slower than this they
+ * come from the copy kept here, so the last data shows at once; the network's answer is still saved for next time.
+ * Everything else waits for the network: a copy shown as fresh would hide that it is old.
+ */
+const PATIENCE = 3000;
+
+async function networkFirst(event, name, patience = 0) {
   const req = event.request;
-  try {
-    const res = await fetch(req);
+  const fresh = fetch(req).then((res) => {
     if (res.ok) event.waitUntil(store(name, req, res.clone()));
     return res;
-  } catch (err) {
+  });
+  // The worker stays up for the network's answer after the copy has gone out.
+  event.waitUntil(fresh.catch(() => {}));
+  const copy = async () => {
     const cache = await caches.open(name);
-    const hit = (await cache.match(req)) ?? (req.mode === 'navigate' ? await cache.match('/') : undefined);
+    return (await cache.match(req)) ?? (req.mode === 'navigate' ? await cache.match('/') : undefined);
+  };
+  let timer;
+  const slow = patience && new Promise((r) => (timer = setTimeout(r, patience))).then(copy).then((hit) => hit ?? fresh);
+  try {
+    return await (slow ? Promise.race([fresh, slow]) : fresh);
+  } catch (err) {
+    const hit = await copy();
     if (hit) return hit;
     throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -63,9 +81,9 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
   // The server's build warning (main.rs) is read live: a stale copy could hide it.
   if (url.pathname === '/api/warning.js') return;
-  if (url.pathname.startsWith('/api/')) event.respondWith(networkFirst(event, API));
+  if (url.pathname.startsWith('/api/')) event.respondWith(networkFirst(event, API, url.pathname === '/api/me' ? PATIENCE : 0));
   else if (url.pathname.startsWith('/assets/')) event.respondWith(cacheFirst(event));
-  else event.respondWith(networkFirst(event, SHELL));
+  else event.respondWith(networkFirst(event, SHELL, event.request.mode === 'navigate' ? PATIENCE : 0));
 });
 
 // A push is { title, body, url, tag? }, encrypted by the server. Browsers require a visible notification for every one;

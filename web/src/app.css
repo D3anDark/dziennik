@@ -453,6 +453,23 @@ label {
   font-size: 0.9rem;
 }
 
+/* The demo's day, a field as low as the banner's buttons. */
+.banner label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Narrower than its longest day, on a small phone, it cuts the day's name rather than the page. */
+.banner select {
+  width: auto;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  text-overflow: ellipsis;
+}
+
 /* Shell: a bar and tabs on a phone, a labelled sidebar on a wide screen */
 
 .side {
@@ -490,6 +507,8 @@ label {
 .picker {
   flex: 1;
   min-width: 0;
+  /* The picker is a field: below 16px iOS zooms the page when it takes focus. One name, the same size. */
+  font-size: 16px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1175,6 +1194,22 @@ section.card.today > h2 {
   flex: 1;
 }
 
+/* Narrower than 360px the folders and "Napisz" overrun the screen: the button keeps its pencil, a screen reader its word. */
+@media (max-width: 359px) {
+  .toolbar .button {
+    width: var(--tap);
+    padding: 0;
+  }
+
+  .toolbar .button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
 @media (min-width: 600px) {
   .toolbar .segmented {
     flex: 0 1 20rem;
@@ -1188,10 +1223,11 @@ section.card.today > h2 {
 /*
  * The plan's week on a clock, one column a day: a lesson starts at its hour and is as tall as it lasts (`--ppm`, pixels
  * a minute), so free periods and long breaks show as room. A phone gets the subject and room, a wide screen the hours
- * and the teacher as well; each block reads out in full and opens its day.
+ * and the teacher as well; each block reads out in full and opens its day. A 45-minute lesson holds three lines of a
+ * subject and its room, which a phone's narrow column needs ("j. angiel-ski").
  */
 .week {
-  --ppm: 1.1px;
+  --ppm: 1.45px;
   display: grid;
   grid-template-columns: 2.4rem repeat(var(--days), minmax(0, 1fr));
   grid-template-rows: auto calc(var(--span) * var(--ppm));
@@ -1298,7 +1334,13 @@ section.card.today > h2 {
   font-weight: 600;
   hyphens: auto;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
+}
+
+@media (min-width: 600px) {
+  .week .column .name {
+    -webkit-line-clamp: 2;
+  }
 }
 
 .week .column small,
@@ -1326,21 +1368,17 @@ section.card.today > h2 {
   }
 }
 
-.week .column .flags {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  min-width: 0;
-}
-
-.week .column .flags .dot {
-  flex: none;
+.week .column small .dot {
+  display: inline-block;
+  margin-right: 3px;
+  vertical-align: 1px;
 }
 
 .week .column .tag {
-  display: inline-block;
-  min-width: 0;
+  display: block;
+  max-width: 100%;
   margin: 0;
+  align-self: flex-start;
   padding: 0 4px;
   overflow: hidden;
   font-size: 0.85em;
@@ -1763,7 +1801,10 @@ section.card.today > h2 {
   border-top: 1px solid var(--rule);
 }
 
+/* The averages go under the subject when both do not fit on one line. */
 .sheet .head {
+  flex-wrap: wrap;
+  row-gap: 2px;
   min-height: 0;
   margin-bottom: var(--space-2);
 }
@@ -1773,6 +1814,10 @@ section.card.today > h2 {
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.sheet .head > span {
+  white-space: normal;
 }
 
 /* Wide, the sheet is a table: the subject, its grades, its average at the right edge, as on a phone. */
@@ -1803,7 +1848,6 @@ section.card.today > h2 {
     padding-top: 9px;
     max-width: 14rem;
     text-align: right;
-    white-space: normal;
   }
 
   /* All the grade lines in one cell, so a subject name over three lines does not push an opened grade down. */
@@ -1913,6 +1957,14 @@ button.chip {
 .segmented.filter button {
   padding: 0 var(--space-2);
   white-space: nowrap;
+}
+
+/* Narrower than 360px the four usual kinds would leave the last alone on a second row. */
+@media (max-width: 359px) {
+  .segmented.filter button {
+    padding: 0 var(--space-1);
+    font-size: 0.9rem;
+  }
 }
 
 @media (min-width: 600px) {

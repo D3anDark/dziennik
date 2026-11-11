@@ -47,6 +47,16 @@
   const TABS = ['start', 'oceny', 'plan', 'wiadomosci'];
   // The form in .github/ISSUE_TEMPLATE/bug.yml, its `server` field filled in.
   const ISSUES = `https://github.com/D3anDark/dziennik/issues/new?template=bug.yml&server=${encodeURIComponent(location.host)}`;
+  // Days of this school year the demo can be seen on (main.js moves its clock there): around each semester's end.
+  const year = new Date().getFullYear() - (new Date().getMonth() < 8);
+  const DEMO_DAYS = [
+    ['', 'dziś'],
+    [`${year + 1}-01-18`, 'styczeń: koniec I semestru'],
+    [`${year + 1}-03-16`, 'marzec: II semestr'],
+    [`${year + 1}-06-08`, 'czerwiec: koniec roku'],
+    [`${year + 1}-07-01`, 'lipiec: wakacje'],
+  ];
+  const demoDay = new URLSearchParams(location.search).get('dzien') ?? '';
   const visible = (p) => Object.hasOwn(PAGES, p) && (!PAGES[p].admin || Boolean(session.me?.admin));
   const more = $derived(Object.keys(PAGES).filter((p) => !TABS.includes(p) && visible(p)));
   const STUDENT_KEY = 'student';
@@ -278,7 +288,18 @@
       </header>
 
       {#if DEMO}
-        <p class="banner" role="note"><span><strong>Wersja demo:</strong> przykładowe dane. <a href="https://github.com/D3anDark/dziennik">Kod i&nbsp;instalacja</a></span></p>
+        <p class="banner" role="note">
+          <span><strong>Wersja demo:</strong> przykładowe dane. <a href="https://github.com/D3anDark/dziennik">Kod i&nbsp;instalacja</a></span>
+          <label>
+            Data
+            <!-- A new day is new data: the page loads again, as the demo's data is made once per load. -->
+            <select value={demoDay} onchange={(e) => (location.search = e.currentTarget.value && `?dzien=${e.currentTarget.value}`)}>
+              {#each DEMO_DAYS.some(([d]) => d === demoDay) ? DEMO_DAYS : [...DEMO_DAYS, [demoDay, demoDay]] as [d, label] (d)}
+                <option value={d}>{label}</option>
+              {/each}
+            </select>
+          </label>
+        </p>
       {/if}
       {#if !net.online}
         <p class="banner" role="status"><span><strong>Offline:</strong> dane z ostatniego połączenia{net.synced ? ` (${fmtUnix(net.synced / 1000)})` : ''}.</span></p>

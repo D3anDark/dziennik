@@ -4,6 +4,28 @@ import { update, drafts, DEMO } from './api.svelte.js';
 import '@fontsource-variable/geist/wght.css';
 import './app.css';
 
+// The demo seen on another day of the school year (?dzien=2027-03-16, picked in its banner): the clock moves there,
+// keeping the time of day, so its data and every view agree on what today is.
+const day = DEMO && new URLSearchParams(location.search).get('dzien');
+if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
+  const RealDate = Date;
+  const now = new RealDate();
+  const target = new RealDate(`${day}T00:00`);
+  target.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  const offset = target - now;
+  // A string that is no date (2027-13-01) leaves the clock alone.
+  if (!isNaN(offset))
+    globalThis.Date = class extends RealDate {
+      constructor(...a) {
+        if (a.length) super(...a);
+        else super(RealDate.now() + offset);
+      }
+      static now() {
+        return RealDate.now() + offset;
+      }
+    };
+}
+
 mount(App, { target: document.getElementById('app') });
 
 // The demo is a page on a static host, without a server to install from or push through.

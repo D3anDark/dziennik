@@ -1,4 +1,4 @@
-import datetime as dt, json, re, sys
+import datetime as dt, json, re, sys, time
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs, unquote
@@ -325,6 +325,10 @@ def dynamic(rest, q):
 
 class H(SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
+    def end_headers(self):
+        # As main.rs: the page is checked on every load, not taken from the browser's own cache.
+        if self.command == "GET" and urlsplit(self.path).path in ("/", "/index.html"): self.send_header("cache-control", "no-cache")
+        super().end_headers()
     def send(self, code, body):
         b = json.dumps(body).encode()
         self.send_response(code); self.send_header("content-type", "application/json")
@@ -398,6 +402,12 @@ class H(SimpleHTTPRequestHandler):
         if u.path == "/__twins":
             ME["accounts"][1]["name"] = ME["accounts"][0]["name"]
             return self.send(200, {})
+        if u.path in ("/__slow", "/__fast"):
+            STATE["slow"] = u.path == "/__slow"
+            return self.send(200, {})
+        # A link that answers late: the page and the API wait, the hashed files the service worker keeps do not.
+        if STATE.get("slow") and not u.path.startswith("/assets/"):
+            time.sleep(10)
         if not u.path.startswith("/api/"):
             return super().do_GET()
         STATE["log"].append("GET " + self.path)

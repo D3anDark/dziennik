@@ -120,11 +120,13 @@ function build(login) {
   const on = (date) => s.week[weekday(date) - 1] ?? [];
   const lessonOf = (subject) => s.base + subject;
   const subjects = Object.keys(s.teachers).map(Number);
-  // The school days of this school year so far, at most 80; in its first weeks the end of the last one as well.
+  // The school days of this school year so far (`all`; a year has about 190), the last 80 of them (`past`); in its
+  // first weeks the end of the last one as well. Grades spread over `all`, so after January both semesters have some.
   const [month, day, year] = [parse(T).getMonth() + 1, parse(T).getDate(), parse(T).getFullYear()];
-  const recentDays = schoolDays(T, 80, -1);
+  const recentDays = schoolDays(T, 200, -1);
   const thisYear = recentDays.filter((d) => d >= `${month >= 9 ? year : year - 1}-09-01`);
-  const past = thisYear.length >= 15 ? thisYear : recentDays.slice(-15);
+  const all = thisYear.length >= 15 ? thisYear : recentDays.slice(-15);
+  const past = all.slice(-80);
   const ago = (k) => past[Math.max(0, past.length - k)];
   const lessonNo = (date, subject) => on(date).indexOf(subject) + 1 || undefined;
 
@@ -138,11 +140,15 @@ function build(login) {
   const value = (subject, category) =>
     category === 6 ? (rnd() < 0.85 ? '+' : '-') : mark(rnd, kindOf(subject) === 'pe' || kindOf(subject) === 'arts' ? s.skill + 0.8 : s.skill);
   for (const subject of subjects.filter((x) => x !== 14)) {
-    const days = past.filter((d) => on(d).includes(subject));
-    const count = Math.min(days.length, 2 + Math.round(s.week.flat().filter((x) => x === subject).length * 1.5));
-    for (const date of days.sort(() => rnd() - 0.5).slice(0, count)) {
-      const category = pick(rnd, GRADED_BY[kindOf(subject)]);
-      add(subject, date, category, value(subject, category));
+    const perWeek = s.week.flat().filter((x) => x === subject).length;
+    // 2 + 1.5 a weekly lesson in 16 weeks, by semester: one begun has at least one grade.
+    for (const sem of [1, 2]) {
+      const days = all.filter((d) => semester(d) === sem && on(d).includes(subject));
+      const count = Math.min(days.length, Math.max(1, Math.round(((2 + perWeek * 1.5) * days.length) / (16 * perWeek))));
+      for (const date of days.sort(() => rnd() - 0.5).slice(0, count)) {
+        const category = pick(rnd, GRADED_BY[kindOf(subject)]);
+        add(subject, date, category, value(subject, category));
+      }
     }
   }
   const last = past.at(-1);

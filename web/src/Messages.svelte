@@ -185,7 +185,7 @@
       <button aria-pressed={folder === 'in'} onclick={() => (folder = 'in')}>Odebrane</button>
       <button aria-pressed={folder === 'out'} onclick={() => (folder = 'out')}>Wysłane</button>
     </div>
-    <a class="button primary" href="#/wiadomosci/nowa"><Icon name="pencil" size={20} />Napisz</a>
+    <a class="button primary" href="#/wiadomosci/nowa"><Icon name="pencil" size={20} /><span>Napisz</span></a>
   </div>
   <Async r={data} empty="Brak wiadomości.">
     {#snippet children(list)}

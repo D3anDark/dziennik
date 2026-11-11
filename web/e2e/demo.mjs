@@ -88,5 +88,24 @@ await until(loaded);
 await js(`document.querySelector('.pager button[aria-label="Poprzedni miesiąc"]').click()`);
 check('calendar: another month and back starts short again', await until(`${loaded} && ${dayCards} === 3 && !!${moreButton}`), await js(dayCards));
 
+// Another day of the school year, picked in the banner: in March a subject has both semesters and the first one's grade.
+await js(`location.hash = '#/oceny'`);
+await until(loaded);
+const now = new Date();
+const march = `${now.getFullYear() - (now.getMonth() < 8) + 1}-03-16`;
+await js(`(() => { const s = document.querySelector('.banner select'); s.value = '${march}'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+const moved = await until(`location.search === '?dzien=${march}' && location.hash === '#/oceny' && ${loaded} && !!document.querySelector('main .sheet')`);
+const subject = `document.querySelector('main .sheet section')?.innerText.replace(/\\s+/g, ' ')`;
+const pressed = `document.querySelector('main .segmented [aria-pressed=true]')?.textContent`;
+const second = await js(subject);
+check('demo: a day picked in the banner moves the clock, March opens on the second semester', moved && (await js(`new Date().getMonth() === 2 && new Date().getDate() === 16`)) &&
+  (await js(`document.querySelector('.banner select').value`)) === march && (await js(pressed)) === 'II semestr' && /II sem\. .* Bieżące /.test(second) && !second.includes('Semestralna'), second);
+await js(`[...document.querySelectorAll('main .segmented button')].find((b) => b.textContent === 'I semestr').click()`);
+await until(`${pressed} === 'I semestr'`);
+const firstTerm = await js(subject);
+check('demo: the first semester, its grades and its final grade', /śr\. I sem\. \S+ Bieżące .* Semestralna \S+$/.test(firstTerm) && !firstTerm.includes('II sem.'), firstTerm);
+const { data: marchShot } = await send('Page.captureScreenshot', { format: 'png' });
+await writeFile(`${out}/demo-desktop-oceny-marzec.png`, Buffer.from(marchShot, 'base64'));
+
 check('no console errors/exceptions', problems.length === 0, problems);
 process.exit(0);

@@ -10,8 +10,9 @@ Projekt nieoficjalny, niezwiązany z firmą Librus: zobacz [Zastrzeżenia](#zast
 
 Wersja demo: <https://d3andark.github.io/dziennik/>. To ten sam frontend z przykładowymi danymi rodzica dwójki dzieci,
 bez logowania i bez serwera: `web/src/demo.js` odpowiada na zapytania aplikacji w przeglądarce, daty idą za zegarem
-urządzenia. Build: `cd web && npm run demo` (katalog `web/dist-demo`, ścieżki względne, bez service workera i powiadomień);
-`.github/workflows/demo.yml` publikuje go na GitHub Pages przy każdym pushu na `main`.
+urządzenia albo za dniem wybranym w banerze demo (styczeń, marzec, czerwiec, lipiec: oceny i średnie wokół końca
+semestru i roku). Build: `cd web && npm run demo` (katalog `web/dist-demo`, ścieżki względne, bez service workera i
+powiadomień); `.github/workflows/demo.yml` publikuje go na GitHub Pages przy każdym pushu na `main`.
 
 Widoki: start (wiersz nowych wiadomości i ocen z linkami, plan dnia, ostatnie oceny, 14 dni terminarza, aktywność), aktywność (nowe, zmienione i
 usunięte oceny, wpisy frekwencji, uwagi, wiadomości, terminy, zmiany planu), oceny ze średnimi i komentarzami (zwykłe,
@@ -135,7 +136,7 @@ liczy jako nowe tylko takie oceny. Zadania, ogłoszenia i uwagi to wiersze w jed
 Na szerokim ekranie każdy widok zaczyna się przy tej samej krawędzi: listy, wiadomości, formularze i oceny mają
 szerokość do czytania (760 px), start i tydzień planu zajmują całą stronę. Tydzień to siatka godzin, kolumna na dzień: lekcja zaczyna się na swojej
 godzinie i jest tak wysoka, jak długo trwa, więc przerwy i okienka widać jako odstęp; lekcje o tej samej porze (grupy,
-odwołana i zastępcza) stoją obok siebie. Na telefonie blok ma przedmiot i salę, od 900 px także godziny i nauczyciela;
+odwołana i zastępcza) stoją obok siebie. Blok ma przedmiot ("j. polski" zamiast "Język polski") i salę, od 900 px także godziny i nauczyciela;
 czytnik ekranu słyszy całość, a dotknięcie otwiera ten dzień. Trwająca lekcja ma obwódkę i odliczanie, dzisiejszą
 kolumnę przecina linia bieżącej godziny. Lekcja to blok w odcieniu swojego przedmiotu (odcień z id przedmiotu, poza
 czerwienią, która znaczy odwołanie); w widoku dnia między blokami stoi długość przerwy, a przerwa od 15 minut i okienko
@@ -144,7 +145,7 @@ godzinie, inaczej najbliższej numerem (w klasie łączonej nauczyciel wpisuje j
 cudzy). Wpis z przedmiotu, którego tego dnia nie ma w planie, należy do innej grupy i zostaje tylko w terminarzu. Plan
 pobiera do tego terminarz miesięcy, w których leży tydzień. Zastępstwo przekreśla zastąpiony przedmiot i nauczyciela
 przed obecnymi (czytnik ekranu słyszy "Biologia, teraz Chemia"). Notatka nauczyciela do zastępstwa ma kolor tekstu, opis
-przeniesienia jest szary. Ostatnie oceny na starcie są ułożone i datowane po dniu wpisania, ocena semestralna albo roczna ma przy przedmiocie dopisek. W tygodniu zastępstwo ma kółko, a sprawdzian etykietę pod przedmiotem; nagłówek dnia ma tę samą kropkę co pasek dni. W wierszu przedmiotu oceny idą od najstarszej. Usunięty wpis w aktywności ma przekreśloną ikonę swojego widoku. Oceny "zwolniony" i "nieklasyfikowany" mają skrót
+przeniesienia jest szary. Ostatnie oceny na starcie są ułożone i datowane po dniu wpisania, ocena semestralna albo roczna ma przy przedmiocie dopisek. W tygodniu zastępstwo ma kółko przed salą, a sprawdzian etykietę pod przedmiotem; nagłówek dnia ma tę samą kropkę co pasek dni. W wierszu przedmiotu oceny idą od najstarszej. Oceny mają przełącznik semestrów: I semestr z oceną semestralną i jej propozycją, II z roczną i średnią roczną, oceny opisowe całego roku w obu; na start II, gdy ma już oceny. Na wąskim ekranie średnie schodzą pod nazwę przedmiotu. Usunięty wpis w aktywności ma przekreśloną ikonę swojego widoku. Oceny "zwolniony" i "nieklasyfikowany" mają skrót
 "zw" i "nkl" (pełne słowo w `title`). Skala 1-6 idzie od czerwieni przez pomarańcz, bursztyn i limonkę do zieleni;
 ocena końcowa jest w pełnym kolorze, spoza skali ma obwódkę. Rok przy dacie pada tylko poza bieżącym rokiem szkolnym.
 W planie dzień z odwołaną lekcją ma czerwoną kropkę, dzień z inną zmianą pusty pierścień. Ocena punktowa ma swoje maksimum
@@ -168,6 +169,9 @@ odpowiedzi, przy zamknięciu aplikacji zapisane w IndexedDB tylko dla tej samej 
 Nieudane odświeżenie zostawia dane z dopiskiem; błąd, który może minąć (brak sieci, Librus nie odpowiada), ma przycisk
 "Spróbuj ponownie". Powrót wstecz wraca w to samo miejsce strony; po zmianie widoku tytuł karty mówi, gdzie jesteś,
 a fokus trafia na nagłówek widoku (czytnik ekranu go odczytuje).
+Na łączu wolniejszym niż 3 s start nie czeka na stronę ani na `/api/me`: service worker daje ich kopię, więc od razu
+widać ostatnie dane, a odpowiedź sieci, gdy przyjdzie, zastępuje kopię (`PATIENCE` w `web/public/sw.js`). Pozostałe
+zapytania czekają na sieć, żeby stara kopia nie udawała świeżej.
 
 Nowa wersja dociera do zainstalowanej aplikacji sama: przy każdym powrocie do aplikacji (i co godzinę) service worker
 sprawdza `sw.js`, który każdy build stempluje innym hashem. Gdy nowa wersja jest już w pamięci, pasek proponuje

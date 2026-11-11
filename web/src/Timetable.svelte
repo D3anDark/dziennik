@@ -230,16 +230,14 @@
                   >
                     <button aria-label={said(l, own)} title={said(l, own)} onclick={() => open(d.date)}>
                       <span class="time">{running ? `do końca ${minutes(l.HourTo) - now} min` : `${l.HourFrom}–${l.HourTo}`}</span>
-                      <strong class="name">{l.Subject?.Name ?? ''}</strong>
-                      {#if own.length || l.IsSubstitutionClass || l.was}
-                        <span class="flags">
-                          {#if l.IsSubstitutionClass || l.was}<span class="dot on"></span>{/if}
-                          {#each own as e (e.id)}<em class="tag exam">{kind(e.category)}</em>{/each}
-                        </span>
-                      {/if}
-                      <!-- The room first: a narrow block cuts the end of the line. -->
+                      <!-- "j. polski", as in the school's own plan: two lines of a narrow column hold it whole. -->
+                      <strong class="name">{(l.Subject?.Name ?? '').replace(/^język /i, 'j. ')}</strong>
+                      {#each own as e (e.id)}<em class="tag exam">{kind(e.category)}</em>{/each}
+                      <!-- A substitution's ring, then the room: a narrow block cuts the end of the line. -->
                       <small
-                        >{l.room ? room(l.room) : ''}{#if l.Teacher}<span class="who">{l.room ? ' · ' : ''}{teacher(l.Teacher)}</span>{/if}</small
+                        >{#if l.IsSubstitutionClass || l.was}<span class="dot on"></span>{/if}{l.room ? room(l.room) : ''}{#if l.Teacher}<span
+                            class="who">{l.room ? ' · ' : ''}{teacher(l.Teacher)}</span
+                          >{/if}</small
                       >
                     </button>
                   </li>

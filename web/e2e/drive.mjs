@@ -257,7 +257,7 @@ check('plan: canceled lesson marked', (await js(`document.querySelectorAll('.wee
   (await said('.week li.canceled button'))[0].endsWith(', odwołana'));
 const sub = (await saidOn(2)).find((l) => l.includes('zastępstwo'));
 check('plan: a substitution is flagged and says what it replaced', sub?.endsWith('zastępstwo, zamiast: Język polski, Piotr') &&
-  (await js(`!!document.querySelectorAll('.week .column')[2].querySelector('.flags .dot.on')`)), sub);
+  (await js(`!!document.querySelectorAll('.week .column')[2].querySelector('small .dot.on')`)), sub);
 // The calendar's Matematyka test two days ahead, given at lesson 3 (Język polski there), and another group's test in a
 // subject not in this plan yesterday. In this week's view Monday to Wednesday, and yesterday's too from Tuesday.
 const dow = await js(`new Date().getDay()`);
@@ -662,19 +662,35 @@ check('student remembered', (await js(`localStorage.getItem('student')`)) === '2
 
 // The second student's school also grades with points, words and descriptions, and the account has no Mobilne Dodatki.
 await go('#/oceny', `[...document.querySelectorAll('main h2')].some((h) => h.textContent === 'Oceny opisowe')`);
-const bySubject = Object.fromEntries(await js(`[...document.querySelectorAll('main section')].map((s) => [s.querySelector('h2').textContent, s.innerText.replace(/\\s+/g, ' ')])`));
-check('grades: every system lands under its subject, a grade flagged semestral gets its own line', /śr\. I sem\. 71,50 I sem\. 3 5\/20 Semestralna zw/.test(bySubject['Język polski']) && bySubject['Matematyka']?.includes('II sem. ZA B') &&
-  bySubject['Oceny opisowe'] === 'Oceny opisowe Opis UC', bySubject);
+const bySubject = `Object.fromEntries([...document.querySelectorAll('main section')].map((s) => [s.querySelector('h2').textContent, s.innerText.replace(/\\s+/g, ' ')]))`;
+const pressed = () => js(`document.querySelector('main .segmented [aria-pressed=true]')?.textContent`);
+const second = await js(bySubject);
+check('grades: the second semester shown first once it has grades, with the descriptive grades of the whole year', (await pressed()) === 'II semestr' &&
+  JSON.stringify(second) === JSON.stringify({ Matematyka: 'Matematyka Bieżące ZA B', 'Oceny opisowe': 'Oceny opisowe Opis UC' }), second);
+const kinds = [];
 const detailOf = async (chip) => {
   await clickText('.chip', chip);
   await sleep(100);
-  return (await text('.detail'))[0];
+  kinds.push((await text('.detail'))[0]);
 };
-const kinds = [await detailOf('5/20'), await detailOf('ZA'), await detailOf('B'), await detailOf('UC')];
-check('grades: points with their range and comment, word and descriptive grades in full', JSON.stringify(kinds) === JSON.stringify([
+const plain = (values) => js(`${JSON.stringify(values)}.every((v) => [...document.querySelectorAll('.chip')].find((c) => c.textContent.trim() === v).classList.contains('g0'))`);
+let uncoloured = await plain(['ZA', 'B', 'UC']);
+await detailOf('ZA');
+await detailOf('B');
+await clickText('main .segmented button', 'I semestr');
+await until(`document.querySelector('main .segmented [aria-pressed=true]')?.textContent === 'I semestr'`);
+const first = await js(bySubject);
+check('grades: every system lands under its subject, a grade flagged semestral gets its own line, in its semester', (await pressed()) === 'I semestr' &&
+  /śr\. I sem\. 71,50 Bieżące 3 5\/20 Semestralna zw$/.test(first['Język polski']) && /Bieżące 5 4\+ Semestralna 5$/.test(first['Matematyka']) &&
+  first['Oceny opisowe'] === 'Oceny opisowe Opis UC', first);
+uncoloured &&= await plain(['5/20']);
+await detailOf('5/20');
+await detailOf('UC');
+const [za, b, points, uc] = kinds;
+check('grades: points with their range and comment, word and descriptive grades in full', JSON.stringify([points, za, b, uc]) === JSON.stringify([
   'Sprawdzian, 0–20 pkt\n20 paź · Anna Nowak\nBrawo', 'Bez kategorii\n21 paź · Piotr\nzaliczono',
-  'Czytanie\n22 paź · Anna Nowak\nCzyta płynnie', 'Ocena śródroczna\n23 paź · Anna Nowak\nUczeń pracuje wytrwale.']), kinds);
-check('grades: only the 1 to 6 scale is coloured', await js(`['5/20', 'ZA', 'B', 'UC'].every((v) => [...document.querySelectorAll('.chip')].find((c) => c.textContent.trim() === v).classList.contains('g0'))`));
+  'Czytanie\n22 paź · Anna Nowak\nCzyta płynnie', 'Ocena śródroczna\n23 paź · Anna Nowak\nUczeń pracuje wytrwale.']), [points, za, b, uc]);
+check('grades: only the 1 to 6 scale is coloured', uncoloured);
 const probes = (await log()).filter((l) => /^GET \/api\/s\/1001u\/(PointGrades|TextGrades|DescriptiveGrades|DescriptiveTextGrades|DescriptiveGrades\/Text)$/.test(l));
 check('grades: a system the school does not use is not asked about on every visit', probes.length === 10, probes);
 await shot('18-grades-systems');
@@ -886,6 +902,20 @@ await sleep(1000);
 check('page controlled by SW after reload', await js(`!!navigator.serviceWorker.controller`));
 const apiCached = await js(`caches.open('api-v1').then((c) => c.keys()).then((k) => k.length)`);
 check('api responses cached (bounded)', apiCached > 0 && apiCached <= 120, apiCached);
+
+// A link where every answer takes 10 s: opening the app again shows the last data from the service worker's copies
+// (PATIENCE in sw.js), not a blank page until the network answers twice. What a phone saves going to the background first.
+await go('#/', `document.querySelectorAll('main section li').length > 0 && !document.querySelector('.busy')`);
+await js(`Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange'))`);
+await sleep(300);
+await fetch(`${base}/__slow`);
+const opened = Date.now();
+send('Page.navigate', { url: base + '/' }).catch(() => {});
+const early = await until(`document.querySelectorAll('main section li').length > 0`, 8000);
+check('slow link: opening again shows the last data within seconds, the network still on its way', early && !!(await js(`document.querySelector('.busy')`)), Date.now() - opened);
+await fetch(`${base}/__fast`);
+await until(`!document.querySelector('.busy')`, 30000);
+await go('#/oceny', `document.querySelectorAll('main h2').length > 0`);
 
 // A new build on the server: another index.html, and sw.js stamped anew. Put back right after.
 const dist = new URL('../dist/', import.meta.url);
