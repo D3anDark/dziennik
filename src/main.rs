@@ -28,9 +28,10 @@ const LOGIN_MAX_ATTEMPTS: usize = 5;
 
 static API_PATH_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_,-]+(/[A-Za-z0-9_,-]+)*$").expect("static regex"));
-/// What the app reads on the Synergia website: the received and sent folders and single messages.
+/// What the app reads on the Synergia website: the received and sent folders, single messages, and the forms of a
+/// new message (2/5) and of a reply (3/5/<id>).
 static WEB_PAGE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^wiadomosci/(?:[56]|1/[56]/[0-9]+/f0)$").expect("static regex"));
+    LazyLock::new(|| Regex::new(r"^wiadomosci/(?:[56]|2/5|3/5/[0-9]+|1/[56]/[0-9]+/f0)$").expect("static regex"));
 static WEB_FILE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^wiadomosci/pobierz_zalacznik/[0-9]+/[0-9]+$").expect("static regex"));
 
@@ -263,10 +264,17 @@ async fn logout(State(app): Shared, headers: HeaderMap) -> Response {
     ([(header::SET_COOKIE, session_cookie("", 0))], StatusCode::NO_CONTENT).into_response()
 }
 
-async fn me(State(app): Shared, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+/// The app asks this on every start, which is where a session in use gets its time renewed, cookie included.
+async fn me(State(app): Shared, headers: HeaderMap) -> Result<Response, ApiError> {
     let email = app.user(&headers)?;
     let t = app.store.tokens(&email).ok_or(RELOGIN)?;
-    Ok(Json(me_json(&email, &t, &app)))
+    let me = Json(me_json(&email, &t, &app));
+    Ok(match sid(&headers) {
+        Some(s) if app.store.renew_session(s).map_err(db_err)? => {
+            ([(header::SET_COOKIE, session_cookie(s, SESSION_TTL_SECS))], me).into_response()
+        }
+        _ => me.into_response(),
+    })
 }
 
 /// State of the caller's notification feeds, one per student.
@@ -426,6 +434,24 @@ async fn write(
     forward(&app, &email, &login, |token| app.http.post(&url).bearer_auth(token).json(&body)).await
 }
 
+/// The only forms the app submits on the Synergia website, and whether the site takes them as multipart: the people
+/// of a recipient group, a new message, a reply.
+const WEB_WRITES: &[(&str, bool)] = &[("getRecipients", false), ("wiadomosci/5", true), ("wiadomosci", true)];
+
+/// Submits one of `WEB_WRITES` with the fields the browser read from the site's own form. Protected from other
+/// sites the same way as `write`.
+async fn website_write(
+    State(app): Shared,
+    headers: HeaderMap,
+    Path((login, path)): Path<(String, String)>,
+    Json(fields): Json<Vec<(String, String)>>,
+) -> Result<Response, ApiError> {
+    let email = app.user(&headers)?;
+    let &(_, multipart) = WEB_WRITES.iter().find(|w| w.0 == path).ok_or(ApiError(StatusCode::FORBIDDEN, "bad_path"))?;
+    let html = web::post(&app, &email, &login, &path, fields, multipart).await?;
+    Ok(([(header::CACHE_CONTROL, "private, no-store")], Json(json!({ "html": html }))).into_response())
+}
+
 /// Sends `req` through `App::send` and streams the answer back.
 async fn forward(
     app: &App,
@@ -484,7 +510,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     tokio::spawn(watch::run(app.clone()));
 
-    let router = Router::new()
+    let bind = env("BIND", "127.0.0.1:8080");
+    let listener = tokio::net::TcpListener::bind(&bind).await?;
+    eprintln!("listening on http://{bind}");
+    axum::serve(listener, router(app, &env("WEB_DIR", "web/dist"))).await?;
+    Ok(())
+}
+
+fn router(app: Arc<App>, web_dir: &str) -> Router {
+    Router::new()
         .route("/api/login", post(login))
         .route("/api/logout", post(logout))
         .route("/api/me", get(me))
@@ -493,27 +527,120 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/push", get(feeds).post(add_device).delete(remove_device))
         .route("/api/activity/{login}", get(activity))
         .route("/api/s/{login}/{*path}", get(proxy).post(write))
-        .route("/api/w/{login}/{*path}", get(website))
+        .route("/api/w/{login}/{*path}", get(website).post(website_write))
         // Message bodies are plain text; nothing the app sends comes near this.
         .layer(DefaultBodyLimit::max(256 * 1024))
-        .fallback_service(ServeDir::new(env("WEB_DIR", "web/dist")))
+        .fallback_service(ServeDir::new(web_dir))
+        // Told nothing, browsers keep index.html for a while on their own guess, and an installed app goes on starting
+        // the previous build. Everything else it names is hashed (/assets) or fetched by the service worker itself.
+        .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, |res: &Response| {
+            let html = res.headers().get(header::CONTENT_TYPE).is_some_and(|t| t.as_bytes().starts_with(b"text/html"));
+            html.then(|| HeaderValue::from_static("no-cache"))
+        }))
         .layer(SetResponseHeaderLayer::overriding(
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static("default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"),
         ))
         .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
-        .with_state(app);
-
-    let bind = env("BIND", "127.0.0.1:8080");
-    let listener = tokio::net::TcpListener::bind(&bind).await?;
-    eprintln!("listening on http://{bind}");
-    axum::serve(listener, router).await?;
-    Ok(())
+        .with_state(app)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::valid_email;
+    use reqwest::Method;
+
+    use super::*;
+    use crate::store::Account;
+
+    /// Who may ask for what, on the real routes. Nothing here reaches Librus: every request is refused first.
+    #[tokio::test]
+    async fn routes_check_who_asks() {
+        let app = Arc::new(App {
+            store: Store::open(":memory:", &"ab".repeat(32)).unwrap(),
+            http: reqwest::Client::new(),
+            admins: HashSet::from(["admin@x.pl".to_string()]),
+            allowed: HashSet::from(["user@x.pl".to_string()]),
+            attempts: Mutex::default(),
+            refresh_lock: tokio::sync::Mutex::default(),
+            api: "http://127.0.0.1:9".into(),
+            synergia: "http://127.0.0.1:9".into(),
+            web: Mutex::default(),
+            vapid: Vapid::load(&Vapid::generate().unwrap(), "admin@x.pl").unwrap(),
+            wake: tokio::sync::Notify::new(),
+        });
+        let account = Account { login: "1u".into(), access_token: Some("tok".into()), student_name: None, state: None };
+        let tokens = Tokens { access: "p".into(), refresh: "r".into(), accounts: vec![account] };
+        let sid = |email: &str| {
+            app.store.put_tokens(email, &tokens).unwrap();
+            app.store.new_session(email).unwrap()
+        };
+        let (admin, user, guest) = (sid("admin@x.pl"), sid("user@x.pl"), sid("guest@x.pl"));
+        app.store.allow("guest@x.pl").unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let web = std::env::temp_dir().join(format!("dziennik-web-{}", std::process::id()));
+        std::fs::create_dir_all(&web).unwrap();
+        std::fs::write(web.join("index.html"), "<!doctype html>").unwrap();
+        tokio::spawn(axum::serve(listener, router(app.clone(), web.to_str().unwrap())).into_future());
+        let http = reqwest::Client::new();
+        // The page is asked for again on every start, so an installed app picks up a new build.
+        let page = http.get(&base).send().await.unwrap();
+        assert_eq!(page.headers().get(header::CACHE_CONTROL).map(|v| v.to_str().unwrap()), Some("no-cache"));
+        std::fs::remove_dir_all(&web).unwrap();
+        let ask = async |method: Method, path: &str, sid: &str, body: Option<Value>| {
+            let mut req = http.request(method, format!("{base}{path}")).header(header::COOKIE, format!("sid={sid}"));
+            if let Some(body) = body {
+                req = req.json(&body);
+            }
+            let res = req.send().await.unwrap();
+            let status = res.status().as_u16();
+            (status, res.json::<Value>().await.map_or(Value::Null, |v| v["error"].clone()))
+        };
+        let refused = |status: u16, error: &str| (status, json!(error));
+
+        // No session, or one this server never issued.
+        for (method, path) in [
+            (Method::GET, "/api/me"),
+            (Method::GET, "/api/s/1u/Grades"),
+            (Method::GET, "/api/w/1u/wiadomosci/5"),
+            (Method::GET, "/api/admin/emails"),
+            (Method::GET, "/api/activity/1u"),
+            (Method::GET, "/api/push"),
+        ] {
+            assert_eq!(ask(method, path, "0000", None).await, refused(401, "unauthorized"), "{path}");
+        }
+        for (path, body) in [
+            ("/api/s/1u/Messages", json!({})),
+            ("/api/w/1u/wiadomosci/5", json!([])),
+            ("/api/admin/emails", json!({ "email": "new@x.pl" })),
+            ("/api/push", json!({ "endpoint": "https://fcm.googleapis.com/x" })),
+        ] {
+            assert_eq!(ask(Method::POST, path, "0000", Some(body)).await, refused(401, "unauthorized"), "{path}");
+        }
+
+        // The access list belongs to the administrators.
+        assert_eq!(ask(Method::GET, "/api/admin/emails", &user, None).await, refused(403, "forbidden"));
+        assert_eq!(ask(Method::POST, "/api/admin/emails", &user, Some(json!({ "email": "new@x.pl" }))).await, refused(403, "forbidden"));
+        assert_eq!(ask(Method::DELETE, "/api/admin/emails/guest@x.pl", &user, None).await, refused(403, "forbidden"));
+        assert!(!app.store.is_allowed("new@x.pl") && app.store.is_allowed("guest@x.pl"));
+        assert_eq!(ask(Method::GET, "/api/admin/emails", &admin, None).await.0, 200);
+
+        // Writes outside the lists and paths that could leave the API are refused before any request goes out.
+        assert_eq!(ask(Method::POST, "/api/s/1u/Grades", &user, Some(json!({}))).await, refused(403, "bad_path"));
+        assert_eq!(ask(Method::POST, "/api/w/1u/usun_wiadomosc", &user, Some(json!([]))).await, refused(403, "bad_path"));
+        assert_eq!(ask(Method::GET, "/api/s/1u/Grades/..%2Fx", &user, None).await, refused(400, "bad_path"));
+        assert_eq!(ask(Method::GET, "/api/s/1u/Grades%3Fx", &user, None).await, refused(400, "bad_path"));
+        assert_eq!(ask(Method::GET, "/api/w/1u/ustawienia", &user, None).await, refused(400, "bad_path"));
+        // Another family's student is not on this account.
+        assert_eq!(ask(Method::GET, "/api/s/2u/Grades", &user, None).await, refused(404, "no_account"));
+        assert_eq!(ask(Method::POST, "/api/w/2u/wiadomosci/5", &user, Some(json!([]))).await, refused(404, "no_account"));
+
+        // A session does not outlive the address on the list.
+        assert_eq!(ask(Method::GET, "/api/me", &guest, None).await.0, 200);
+        assert_eq!(ask(Method::DELETE, "/api/admin/emails/guest@x.pl", &admin, None).await.0, 200);
+        assert_eq!(ask(Method::GET, "/api/me", &guest, None).await, refused(401, "unauthorized"));
+    }
 
     #[test]
     fn email_shape() {

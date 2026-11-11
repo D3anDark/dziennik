@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 
 const [, , cdpPort, out, base, mockPid] = process.argv;
 const page = (await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()).find((t) => t.type === 'page');
@@ -46,6 +46,7 @@ const js = async (expression) => {
   return r.result.value;
 };
 const shot = async (name) => {
+  await sleep(250); // let 150ms transitions (a button turning secondary, a chevron turning) settle
   const { data } = await send('Page.captureScreenshot', { format: 'png' });
   await writeFile(`${out}/${name}.png`, Buffer.from(data, 'base64'));
 };
@@ -97,20 +98,22 @@ await fill('dobre');
 await until(`!!document.querySelector('header.bar select')`);
 await until(`document.querySelectorAll('main .events li').length > 0 && ${loaded}`);
 const greeting = await text('.greeting > *');
-check('start is default page, opened by a greeting with the date, the student and the lucky number', ['Dzień dobry', 'Dobry wieczór'].includes(greeting[0]) && / · Jan Testowy · szczęśliwy numerek 13$/.test(greeting[1]) && !(await js(`!!document.querySelector('h1.title')`)), greeting);
+check('start is default page, opened by a greeting with the date and the lucky number', ['Dzień dobry', 'Dobry wieczór'].includes(greeting[0]) && /^\p{L}+, \d+ \p{L}+ · Szczęśliwy numerek 13$/u.test(greeting[1]) && !(await js(`!!document.querySelector('h1.title')`)), greeting);
+check('start: the page is named by the app alone', (await js('document.title')) === 'Dziennik', await js('document.title'));
 const start = await mainText();
 const weekday = !(await js(`[0,6].includes(new Date().getDay())`));
 const friday = (await js(`new Date().getDay()`)) === 5;
-const tiles = await rows('.tiles li');
-check('start: count tiles', tiles.length === 4 && tiles[0] === 'Nieprzeczytane 1 wiadomości' && tiles[1].startsWith(weekday ? 'Lekcje dziś ' : 'Najbliższe lekcje ') && tiles[2] === 'Nowe oceny 0 z ostatnich 7 dni' && tiles[3] === 'Terminarz 3 w ciągu 14 dni' &&
-  (await js(`document.querySelector('.tiles a').getAttribute('href')`)) === '#/wiadomosci', tiles);
+await until(`document.querySelectorAll('.news a').length === 2`);
+const news = await rows('.news a');
+check('start: what is new as links into its pages, nothing at zero, lessons left to the day panel', JSON.stringify(news) === JSON.stringify(['1 nowa wiadomość', '1 nowa ocena']) &&
+  (await js(`document.querySelector('.news a').getAttribute('href')`)) === '#/wiadomosci', news);
 const feed = await rows('.panels .feed li');
 check('start: activity shows edits and removals, a changed grade with its value, unknown kinds left out', feed.length === 5 && /^4\+ Zmieniona ocenaMatematyka \d+ min$/.test(feed[0]) && feed[1].startsWith('Nowy wpis we frekwencji ') &&
   feed[2].startsWith('Usunięta ocena ') && feed[3].startsWith('Zmiana w planie lekcji ') && feed[4].startsWith('Nowa wiadomość '), feed);
 check('start: unread count on the messages tab', JSON.stringify(await text('nav.tabs a[href="#/wiadomosci"] .badge')) === '["1"]' && (await text('nav.tabs .badge')).length === 1, await text('nav.tabs .badge'));
 const firstH2 = (await text('main section h2'))[0];
 check('start: next lesson day', (await js(`[0,6].includes(new Date().getDay())`)) ? firstH2 !== 'Dziś' : firstH2 === 'Dziś', firstH2);
-check('start: lessons listed', start.includes('Matematyka') && start.includes('sala 104'), start);
+check('start: lessons listed', start.includes('Matematyka') && /sala\s104/.test(start), start);
 const recent = await text('main .entries li .chip');
 check('start: recent grades newest first', recent[0] === '4+' && recent.length === 6, recent);
 const ev = await text('main .events li strong');
@@ -135,31 +138,62 @@ if (weekday) {
   };
   const marks = [await at('08:20'), await at('08:50'), await at('23:00')];
   check('start: lesson in progress, then the next one, nothing after school', marks[0].length === 1 && /Matematyka.*teraz/.test(marks[0][0]) && marks[1].length === 1 && /Fizyka.*następna/.test(marks[1][0]) && marks[2].length === 0, marks);
-  const after = [(await text('.panels .card h2'))[0], (await rows('.tiles li'))[1], await js(`document.querySelector('.panels .card').classList.contains('today')`)];
-  check('start: after the last lesson the plan and its tile move to the next school day', !after[2] &&
-    (friday ? /^poniedziałek, /.test(after[0]) && /^Najbliższe lekcje 3 poniedziałek, od 08:00$/.test(after[1]) : after[0] === 'Jutro' && /^Lekcje jutro [23] od 08:00$/.test(after[1])), after);
+  const after = [(await text('.panels .card h2'))[0], await js(`document.querySelector('.panels .card').classList.contains('today')`)];
+  check('start: after the last lesson the plan moves to the next school day', !after[1] && (friday ? /^poniedziałek, /.test(after[0]) : after[0] === 'Jutro'), after);
   await at('07:30');
 }
 
 await go('#/oceny', `document.querySelectorAll('main h2').length > 0`);
 const subjects = await text('main h2');
-check('grades: subjects sorted, unknown ids not merged', JSON.stringify(subjects) === JSON.stringify(['Inne', 'Inne', 'Język polski', 'Matematyka']), subjects);
+check('a view is named in the title and its heading takes the focus', (await js('document.title')) === 'Oceny · Dziennik' && (await js(`document.activeElement === document.querySelector('main h1')`)), await js('document.title'));
+check('grades: subjects sorted, "Inne" after the named ones, unknown ids not merged', JSON.stringify(subjects) === JSON.stringify(['Język polski', 'Matematyka', 'Inne', 'Inne']), subjects);
 check('tab current', (await text('nav.tabs a[aria-current=page]'))[0] === 'Oceny');
 const mat = await js(`[...document.querySelectorAll('main section')].find((s) => s.querySelector('h2').textContent === 'Matematyka').innerText`);
-check('grades: semestral split, average at the subject, zero averages hidden', mat.includes('Ocena semestralna: 5') && mat.includes('śr. I sem. 4.67') && !mat.includes('II sem. 0'), mat);
+check('grades: semestral split, average at the subject, zero averages hidden', /Semestralna\s+5/.test(mat) && mat.includes('śr. I sem. 4,67') && !mat.includes('II sem. 0'), mat);
+const freshBefore = await js(`[...document.querySelectorAll('.chip.fresh')].map((c) => c.getAttribute('aria-label'))`);
+const keyBefore = (await text('.fresh-key'))[0];
 await clickText('.chip', '4+');
 await sleep(100);
 const det = (await text('.detail'))[0] ?? '';
-check('grades: detail with weight and teacher', det.startsWith('Kartkówka, ') && det.endsWith('waga 2, Anna Nowak'), det);
+check('grades: detail with weight and teacher', det.startsWith('Kartkówka · waga 2\n') && det.endsWith(' · Anna Nowak'), det);
+check('grades: a grade added this week is new until opened, then its dot goes', JSON.stringify(freshBefore) === JSON.stringify(['Ocena 4+, nowa']) &&
+  (await js(`document.querySelectorAll('.chip.fresh').length`)) === 0 && (await js(`localStorage.getItem('seen-grades/1001u')`)) === '["Grades/2"]' &&
+  keyBefore === 'nowa ocena: kropka znika po jej otwarciu' && !(await js(`!!document.querySelector('.fresh-key')`)), { freshBefore, keyBefore });
 await shot('2-grades');
 
-await go('#/plan', `document.querySelectorAll('main section').length === 7`);
+// A phone opens the plan at one day, in a strip of its week's school days.
+await go('#/plan', `document.querySelectorAll('.days button').length === 5 && !!document.querySelector('main section .lessons')`);
+const strip = await js(`[...document.querySelectorAll('.days button')].map((b) => ({ name: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), today: b.getAttribute('aria-current') }))`);
+check('plan: a phone opens at one day, picked from the school days of its week, today marked',
+  (await js(`document.querySelectorAll('main section').length`)) === 1 && strip.filter((d) => d.pressed === 'true').length === 1 &&
+  (weekday ? strip.find((d) => d.today === 'date')?.pressed === 'true' : !strip.some((d) => d.today)), strip);
+check('plan: a day with a cancelled or substituted lesson says so in its name, a cancelled one in red', strip[1]?.name.endsWith(', odwołane lekcje') &&
+  strip[2]?.name.endsWith(', zmiany w planie') && strip[0]?.name.split(', ').length === 2 &&
+  JSON.stringify(await js(`[...document.querySelectorAll('.days .dot')].map((d) => d.className.replace(/svelte-\\S+/g, '').trim())`)) ===
+  JSON.stringify(['dot', 'dot on alert', 'dot on', 'dot', 'dot']), strip);
+const todayButton = `[...document.querySelectorAll('.pager button')].find((b) => b.textContent === 'Dziś')`;
+check('plan: "Dziś" is off while the view follows the lessons', await js(`${todayButton}.disabled`));
+await js(`document.querySelectorAll('.days button')[0].click()`);
+await until(`document.querySelector('main section h2').innerText.startsWith('poniedziałek')`);
+const monday = await js(`document.querySelector('main section').innerText`);
+check('plan: a picked day shows its lessons', /1\s+08:00\s*–\s*08:45\s+Matematyka/.test(monday) &&
+  (await js(`document.querySelectorAll('.days button')[0].getAttribute('aria-pressed')`)) === 'true' && !(await js(`${todayButton}.disabled`)), monday);
+await sleep(200);
+await shot('3-plan-day');
+await clickText('.segmented button', 'Tydzień');
+check('plan: the week view is remembered', (await until(`document.querySelectorAll('main section').length === 5`)) && (await js(`localStorage.getItem('plan-view')`)) === 'week');
+await go('#/start', loaded);
+// The opened 4+ is no longer counted on Start (the panel refreshes behind the remembered answer).
+check('start: an opened grade is not counted as new any more', await until(`document.querySelectorAll('.news a').length === 1`) &&
+  (await rows('.news a'))[0] === '1 nowa wiadomość', await rows('.news a'));
+await go('#/plan', `document.querySelectorAll('main section').length === 5`);
 const firstDay = await js(`document.querySelector('main section').innerText`);
-check('plan: 7 days, sorted, room symbol', /1\s+08:00–08:45\s+Matematyka/.test(firstDay) && firstDay.includes('sala 104') && firstDay.indexOf('Fizyka') < firstDay.indexOf('Język polski'), firstDay);
+check('plan: 7 days, sorted, room symbol', /1\s+08:00\s*–\s*08:45\s+Matematyka/.test(firstDay) && /sala\s104/.test(firstDay) && firstDay.indexOf('Fizyka') < firstDay.indexOf('Język polski'), firstDay);
+check('plan: a room the school named "sala gim." is not called a room twice', firstDay.includes(' · sala gim.') && !firstDay.includes('sala sala'), firstDay);
 check('plan: canceled lesson tagged', (await js(`document.querySelectorAll('li.canceled').length`)) === 1);
 const changed = await text('.lessons .change');
-check('plan: substitution names what it replaced, with the note', JSON.stringify(changed) === JSON.stringify(['zamiast: Język polski, Piotr; Przynieście zeszyty']), changed);
-check('plan: this week disabled', !weekday || (await js(`[...document.querySelectorAll('.weeknav button')][1].disabled`)));
+check('plan: substitution names what it replaced, with the note', JSON.stringify(changed) === JSON.stringify(['zamiast: Język polski, Piotr', 'Przynieście zeszyty']), changed);
+check('plan: the week range is named', /^\d+(–| – )\d+ \p{L}+$|^\d+ \p{L}+ – \d+ \p{L}+$/u.test((await text('.range'))[0]), await text('.range'));
 await shot('3-plan');
 if (weekday) {
   const place = await js(`(() => { const top = document.querySelector('.card.today').getBoundingClientRect().top; return { top, first: document.querySelector('main section').classList.contains('today'), end: scrollY + innerHeight >= document.documentElement.scrollHeight - 2 }; })()`);
@@ -167,17 +201,17 @@ if (weekday) {
   // After school the same view opens at the next school day; on a Friday that is the week after.
   await js(`Date.prototype.toTimeString = () => '23:00:00 GMT+0100'`);
   await go('#/start', loaded);
-  await go('#/plan', `document.querySelectorAll('main section').length === 7`);
+  await go('#/plan', `document.querySelectorAll('main section').length === 5`);
   await sleep(200);
   const later = await js(`(() => { const cards = [...document.querySelectorAll('main section')]; const today = cards.findIndex((c) => c.classList.contains('today')); const top = (i) => cards[i]?.getBoundingClientRect().top;
-    return { today, next: top(today + 1), thisWeek: [...document.querySelectorAll('.weeknav button')][1].disabled, end: scrollY + innerHeight >= document.documentElement.scrollHeight - 2 }; })()`);
+    return { today, next: top(today + 1), thisWeek: today !== -1, end: scrollY + innerHeight >= document.documentElement.scrollHeight - 2 }; })()`);
   check('plan: after the last lesson it opens at the next school day', friday ? later.today === -1 && !later.thisWeek : later.thisWeek && ((later.next >= 60 && later.next <= 90) || later.end), later);
   await js(`Date.prototype.toTimeString = () => '07:30:00 GMT+0100'`);
   await go('#/start', loaded);
-  await go('#/plan', `document.querySelectorAll('main section').length === 7`);
+  await go('#/plan', `document.querySelectorAll('main section').length === 5`);
 }
 const before = (await log()).filter((l) => l.includes('Timetables')).length;
-await clickText('.weeknav button', 'Następny');
+await js(`document.querySelector('[aria-label="Następny tydzień"]').click()`);
 await sleep(600);
 check('plan: next week requested', (await log()).filter((l) => l.includes('Timetables')).length === before + 1);
 
@@ -211,13 +245,29 @@ count = await weeks();
 await drag([[200, 300], [202, 360], [204, 430], [205, 500]]);
 await lift();
 check('swipe: a vertical drag is not a swipe', (await rest()) && (await weeks()) === count, await weeks());
+await clickText('.segmented button', 'Dzień');
+await js(`document.querySelectorAll('.days button')[4].click()`);
+count = await weeks();
+await drag([[330, 420], [300, 420], [220, 421], [140, 421], [90, 422]]);
+await sleep(150);
+await lift();
+check('swipe: in the day view it steps one school day, from Friday past the weekend',
+  (await rest()) && (await until(`document.querySelector('main section h2').innerText.startsWith('poniedziałek')`)) && (await weeks()) === count + 1, await text('main section h2'));
 
 await go('#/frekwencja', `document.querySelectorAll('main .totals').length === 2`);
-const totals = await text('main section:nth-of-type(1) .totals li');
-check('attendance: percentage and counts', JSON.stringify(totals) === JSON.stringify(['Frekwencja\n60.0%', 'Nieobecność\n2', 'Spóźnienie\n1']), totals);
-const per = await text('main section:nth-of-type(2) .totals li');
-check('attendance: per subject', JSON.stringify(per) === JSON.stringify(['Inne\n1 nb, 66.7%', 'Matematyka\n1 nb, 50.0%']), per);
-check('attendance: presence filtered', (await js(`document.querySelectorAll('.entries li').length`)) === 3);
+const totals = await rows('main section:nth-of-type(1) .totals li');
+check('attendance: percentage, and unexcused absences counted apart from excused ones', JSON.stringify(totals) === JSON.stringify(
+  ['nb Nieusprawiedliwione 1', 'u Usprawiedliwione 1', 'sp Spóźnienia 1']) && (await text('main .figure'))[0] === '60,0% obecności' &&
+  JSON.stringify(await text('main .totals strong.alert')) === JSON.stringify(['1']), totals);
+const per = await rows('main section:nth-of-type(2) .totals li');
+check('attendance: per subject, the unexcused first', JSON.stringify(per) === JSON.stringify(['Matematyka 1 nieuspr. 50,0%', 'Inne 1 uspr. 66,7%']), per);
+const marks = () => js(`[...document.querySelectorAll('.entries .chip')].map((c) => c.classList[2] + ':' + c.textContent)`);
+check('attendance: presence filtered, every kind has its own mark', JSON.stringify(await marks()) === JSON.stringify(['g0:u', 'g0:sp', 'g1:nb']), await marks());
+await js(`document.querySelector('.filter button[title="Nieusprawiedliwione"]').click()`);
+check('attendance: the list narrows to one kind', JSON.stringify(await marks()) === JSON.stringify(['g1:nb']) &&
+  (await js(`document.querySelector('.filter [aria-pressed=true]').innerText`)) === 'Nieuspr.', await marks());
+await clickText('.filter button', 'Wszystkie');
+check('attendance: and back to all', (await marks()).length === 3);
 await shot('4-attendance');
 
 await go('#/wiecej', `document.querySelectorAll('.menu a').length > 0`);
@@ -240,15 +290,16 @@ check('calendar: range end shown', (await mainText()).includes('do '));
 check('more tab current on subpage', (await text('nav.tabs a[aria-current=page]'))[0]?.endsWith('Więcej'));
 check('subpage: a way back to the menu', (await js(`document.querySelector('main a.back')?.getAttribute('href')`)) === '#/wiecej' && (await text('main a.back'))[0] === 'Więcej');
 await shot('6-calendar');
-await clickText('.weeknav button', 'Następny');
+await js(`document.querySelector('[aria-label="Następny miesiąc"]').click()`);
 await until(loaded);
 const m2 = new Date(); m2.setMonth(m2.getMonth() + 1, 1);
 check('calendar: next month requested', (await log()).some((l) => l.includes(`Calendars/7?month=${m2.getMonth() + 1}&year=${m2.getFullYear()}`)));
 
 await go('#/zadania', `document.querySelectorAll('main details').length === 2`);
 const hw = await text('main details summary');
-check('homework: sorted by due, subject via lesson', hw[0].startsWith('Wypracowanie') && hw[0].includes('Język polski') && hw[0].includes('termin'), hw);
-check('homework: upcoming highlighted', await js(`document.querySelector('main details').classList.contains('today') && !document.querySelectorAll('main details')[1].classList.contains('today')`));
+check('homework: sorted by due, subject via lesson', hw[0].startsWith('Wypracowanie') && /Język\spolski/.test(hw[0]) && hw[0].includes('termin'), hw);
+check('homework: one card, the assignments rows of it', (await js(`document.querySelectorAll('main .card.stack > details').length`)) === 2);
+check('homework: past its date and not done is marked, a coming one is not', JSON.stringify(await js(`[...document.querySelectorAll('main details')].map((d) => d.querySelector('summary .tag:not(.ok)')?.textContent ?? '')`)) === JSON.stringify(['', 'po terminie']));
 await js(`document.querySelector('main details summary').click()`);
 await sleep(100);
 check('homework: html stripped, link rendered', (await js(`document.querySelector('main details .rich').innerText`)).includes('Opis postaci.') &&
@@ -275,19 +326,30 @@ check('messages: sender on the first line, time in words with the date behind it
   /godz\.|min|teraz/.test((await text('.messages time'))[0]) && /^\d+ \S+ \d{4}, 08:00$/.test(await js(`document.querySelector('.messages time').title`)), await text('.messages time'));
 check('messages: user lookup chunked', (await log()).some((l) => /Messages\/User\/[\d,]+$/.test(l)));
 await shot('8-messages');
+const find = (q) => js(`(() => { const i = document.querySelector('main input.search'); i.value = ${JSON.stringify(q)}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+await find('piotr');
+await sleep(50);
+const found = await text('.messages .subject');
+await find('nic takiego');
+await sleep(50);
+const none = await mainText();
+await find('');
+await sleep(50);
+check('messages: search by sender or subject, and says when nothing matches', JSON.stringify(found) === JSON.stringify(['Stara']) &&
+  none.includes('Brak wiadomości pasujących do wyszukiwania.') && (await text('.messages .subject')).length === 2, found);
 await clickText('.segmented button', 'Wysłane');
 await sleep(100);
 const sent = await text('.messages li');
 check('messages: sent folder', sent.length === 1 && sent[0].includes('Do: Anna Nowak'), sent);
 await clickText('.segmented button', 'Odebrane');
 await js(`document.querySelector('.messages a').click()`);
-await until(`!!document.querySelector('main article h2')`);
+await until(`!!document.querySelector('main article')`);
 const msg = await js(`document.querySelector('main article').innerText`);
-check('message: detail', msg.startsWith('Wycieczka') && msg.includes('Od: Anna Nowak') && msg.includes('Do: Jan Testowy') && msg.includes('załączniki'), msg);
+check('message: detail, its subject the title under a way back to the list', (await text('main h1'))[0] === 'Wycieczka' && (await js(`document.querySelector('main a.back')?.compareDocumentPosition(document.querySelector('main h1')) === Node.DOCUMENT_POSITION_FOLLOWING`)) && msg.includes('Od: Anna Nowak') && msg.includes('Do: Jan Testowy') && msg.includes('załączniki'), msg);
 check('message: body is text, nothing executed', (await js(`window.pwned === undefined && !document.querySelector('main img, main script') && !document.querySelector('main').innerText.includes('pwned')`)) &&
   (await js(`document.querySelector('main .rich a')?.href`)) === 'https://example.com/x');
 await shot('9-message');
-await clickText('main a', 'Wróć do listy');
+await clickText('main a', 'Wiadomości');
 await until(`!document.querySelector('nav.tabs .badge')`);
 check('messages: badge cleared after reading', !(await js(`!!document.querySelector('nav.tabs .badge')`)) && !(await js(`!!document.querySelector('.messages li.unread')`)));
 
@@ -297,7 +359,7 @@ await clickText('main a', 'Napisz');
 await until(`document.querySelectorAll('.receivers details').length > 0`);
 const sections = await text('.receivers summary');
 check('compose: groups, subgroups flattened, parents skipped, failed group dropped',
-  JSON.stringify(sections) === JSON.stringify(['Wychowawcy\n1', 'Nauczyciele: Matematyka\n2']) && !(await log()).some((l) => l.includes('ReceiversGroup/parents')), sections);
+  JSON.stringify(sections) === JSON.stringify(['Wychowawcy\n0 z 1', 'Nauczyciele: Matematyka\n0 z 2']) && !(await log()).some((l) => l.includes('ReceiversGroup/parents')), sections);
 const subjectInput = '.compose > label:first-of-type input';
 await setField(subjectInput, 'blad');
 await setField('.compose textarea', 'Tresc');
@@ -317,13 +379,30 @@ check('compose: Librus error text shown', (await text('main [role=alert]'))[0] =
 await js(`document.querySelector('.receivers details').open = true`);
 await shot('14-compose');
 await setField(subjectInput, 'Pytanie o test');
-await submit();
-await until(`location.hash === '#/wiadomosci/15' && !!document.querySelector('main article h2')`);
+// On a phone: Enter on the keyboard in the recipient search only closes the keyboard, it does not send.
+const posts = async () => (await log()).filter((l) => l.startsWith('POST /api/s/1001u/Messages ')).length;
+const postsBefore = await posts();
+await js(`document.querySelector('.receivers input[type=search]').focus()`);
+await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' });
+await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+await sleep(300);
+check('compose: Enter in the recipient search does not send', (await posts()) === postsBefore && (await js(`location.hash`)) === '#/wiadomosci/nowa' &&
+  (await js(`document.activeElement.type !== 'search'`)));
+// Writing, the form scrolled to its top: the send button is still on screen, the tabs out of the way, and a finger's tap sends.
+await js(`document.querySelector('.compose textarea').focus(); scrollTo(0, 0)`);
+const sendAt = await js(`(() => { const b = document.querySelector('.compose .send'); const r = b.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2;
+  return { x, y, hit: document.elementFromPoint(x, y) === b, clear: r.bottom <= innerHeight, tabs: getComputedStyle(document.querySelector('.tabs')).display }; })()`);
+check('compose: the send button stays in reach, no tabs while writing', sendAt.hit && sendAt.clear && sendAt.tabs === 'none', sendAt);
+await shot('14-compose-send');
+await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sendAt.x, y: sendAt.y }] });
+await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+await until(`location.hash === '#/wiadomosci/15' && !!document.querySelector('main article')`);
 const sentLog = (await log()).filter((l) => l.startsWith('POST /api/s/1001u/Messages ')).at(-1);
 check('compose: new message posted with receivers', sentLog === 'POST /api/s/1001u/Messages {"body": "Tresc", "receivers": ["2", "1"], "subject": "Pytanie o test"}', sentLog);
-check('compose: opens sent message with confirmation', (await text('.toast'))[0] === 'Wiadomość wysłana.' && (await text('main article h2'))[0] === 'Pytanie o test');
+check('compose: opens sent message with confirmation, the tabs back', (await text('.toast'))[0] === 'Wiadomość wysłana.' && (await text('main h1'))[0] === 'Pytanie o test' &&
+  (await js(`getComputedStyle(document.querySelector('.tabs')).display`)) !== 'none');
 
-await go('#/wiadomosci/11', `!!document.querySelector('main article h2')`);
+await go('#/wiadomosci/11', `!!document.querySelector('main article')`);
 await clickText('main a', 'Odpowiedz');
 await until(`!!document.querySelector('form.compose')`);
 check('reply: recipient and subject prefilled', (await mainText()).includes('Do: Anna Nowak') && (await js(`document.querySelector('.compose label input').value`)) === 'Re: Wycieczka' && !(await js(`!!document.querySelector('.receivers')`)));
@@ -344,10 +423,10 @@ check('message: DownloadUrl that is not https is refused', badFile === 'closed' 
 await fetch(`${base}/__unread`);
 await go('#/start', loaded);
 await go('#/wiadomosci', `!!document.querySelector('.messages li.unread')`);
-await clickText('main button', 'Oznacz wszystkie jako przeczytane');
+await clickText('main button', 'Oznacz jako przeczytane');
 await until(`!document.querySelector('.messages li.unread') && !document.querySelector('nav.tabs .badge')`);
 check('messages: mark all read', !(await js(`!!document.querySelector('.messages li.unread')`)) && !(await js(`!!document.querySelector('nav.tabs .badge')`)) &&
-  !(await js(`[...document.querySelectorAll('main button')].some((b) => b.textContent.includes('Oznacz wszystkie'))`)));
+  !(await js(`[...document.querySelectorAll('main button')].some((b) => b.textContent.includes('Oznacz jako przeczytane'))`)));
 
 await go('#/ogloszenia', `document.querySelectorAll('main details').length === 2`);
 const notices = await text('main details summary');
@@ -355,8 +434,8 @@ check('notices: sorted, author, unknown author', notices[0].startsWith('Zebranie
 
 await go('#/uwagi', `document.querySelectorAll('main .note').length === 2`);
 const notes = await text('main .note h2');
-check('notes: categories (CategoryName fallback), type', JSON.stringify(notes) === JSON.stringify(['Konkursy, pozytywna', 'Przygotowanie, negatywna']), notes);
-check('notes: negative styled', await js(`document.querySelectorAll('main .note')[1].classList.contains('negatywna')`));
+check('notes: categories (CategoryName fallback), type', JSON.stringify(notes) === JSON.stringify(['Konkursy pozytywna', 'Przygotowanie negatywna']), notes);
+check('notes: the type is a tag, only a negative one in red', await js(`(() => { const t = [...document.querySelectorAll('main .note h2 .tag')]; return t.length === 2 && t[0].classList.contains('plain') && !t[1].classList.contains('plain') && document.querySelectorAll('main .note')[1].classList.contains('negatywna'); })()`));
 await shot('10-notes');
 
 await go('#/zachowanie', loaded);
@@ -368,16 +447,30 @@ const teachers = await text('main .totals li');
 check('teachers: class, tutor and school, then subjects', JSON.stringify(teachers) === JSON.stringify([
   'Klasa\n2a', 'Wychowawca\nAnna Nowak', 'Szkoła\nSP nr 1', 'Adres\nSzkolna 5, Kraków', 'Język polski\nPiotr', 'Matematyka\nAnna Nowak, Piotr']), teachers);
 
+// Librus down: a view never loaded says so with a way to try again, one loaded before keeps its data under a note.
+await fetch(`${base}/__down`);
+await go('#/tematy', `!!document.querySelector('main [role=alert]')`);
+check('down: an error that can pass offers another try', (await text('main [role=alert] p'))[0] === 'Librus nie odpowiada. Spróbuj później.' && (await js(hasButton('Spróbuj ponownie'))), await mainText());
+await go('#/ogloszenia', `!!document.querySelector('main .note-line')`);
+check('down: data loaded before stays, with a note', (await js(`document.querySelectorAll('main details').length`)) === 2 && (await text('main .note-line p'))[0]?.startsWith('Nie udało się odświeżyć'), await mainText());
+await fetch(`${base}/__up`);
+await clickText('main button', 'Spróbuj ponownie');
+check('down: trying again once Librus is back clears the note', await until(`!document.querySelector('main .note-line') && document.querySelectorAll('main details').length === 2`), await mainText());
+
 await go('#/aktywnosc', `document.querySelectorAll('main .feed li').length === 6`);
 check('activity: the whole list on its own page, each entry leading to its view', (await text('h1.title'))[0] === 'Aktywność' &&
-  JSON.stringify(await js(`[...document.querySelectorAll('main .feed a')].map((a) => a.getAttribute('href'))`)) === JSON.stringify(['#/oceny', '#/frekwencja', '#/oceny', '#/plan', '#/wiadomosci', '#/uwagi']) &&
+  JSON.stringify(await js(`[...document.querySelectorAll('main .feed a')].map((a) => a.getAttribute('href'))`)) === JSON.stringify(['#/oceny', '#/frekwencja', '#/oceny', '#/plan', '#/wiadomosci/11', '#/uwagi']) &&
   (await log()).filter((l) => l === 'GET /api/activity/1001u').length >= 2);
+// The sidebar is in the page (hidden on a phone) and names each view with its icon.
+const feedIcons = await js(`[...document.querySelectorAll('main .feed a:has(.tile)')].map((a) => a.querySelector('.tile svg').innerHTML === document.querySelector('.side a[href="#/' + a.getAttribute('href').split('/')[1] + '"] svg')?.innerHTML)`);
+check('activity: an entry without a grade shows the icon of its view, a removal struck through', JSON.stringify(feedIcons) === JSON.stringify([true, false, true, true, true]) &&
+  (await js(`(() => { const a = document.querySelectorAll('main .feed a:has(.tile)')[1]; return a.textContent.includes('Usunięta') && a.querySelector('.tile svg').innerHTML.startsWith(document.querySelector('.side a[href="#/oceny"] svg').innerHTML); })()`)), feedIcons);
 await shot('23-activity');
 
 await go('#/tematy', `document.querySelectorAll('main section').length > 0`);
 const topics = await rows('main section:first-of-type .events li');
 check('topics: newest day first, lessons in order, subject and teacher via lesson', (await js(`document.querySelectorAll('main section').length`)) === 10 &&
-  JSON.stringify(topics) === JSON.stringify(['Matematyka lekcja 1, Anna Nowak Ułamki 1', 'Język polski lekcja 2, Piotr Lektura']), topics);
+  JSON.stringify(topics) === JSON.stringify(['Matematyka lekcja 1 · Anna Nowak Ułamki 1', 'Język polski lekcja 2 · Piotr Lektura']), topics);
 await clickText('main button', 'Pokaż starsze');
 await sleep(100);
 check('topics: older days on demand', (await js(`document.querySelectorAll('main section').length`)) === 12 && !(await js(`!!document.querySelector('main button')`)));
@@ -396,19 +489,20 @@ check('push: offered while this device is not subscribed', (await js(hasButton('
 await clickText('main button', 'Włącz powiadomienia');
 await until(`document.querySelectorAll('main .access li').length === 2`);
 const pushLog = (await log()).filter((l) => l.includes('/api/push'));
-check('push: subscribes with the server key and registers the device', (await js('window.__key')) === 65 && (await mainText()).includes('Włączone na tym urządzeniu.') &&
+check('push: subscribes with the server key and registers the device', (await js('window.__key')) === 65 && (await mainText()).includes('Włączone.') &&
   pushLog.includes('POST /api/push {"endpoint": "https://fcm.googleapis.com/fcm/send/e2e", "keys": {"auth": "a", "p256dh": "p"}}'), pushLog);
 const feedRows = await rows('main .access li');
-check('push: feed state per student', feedRows[0]?.startsWith('Jan Testowy Sprawdzono 9 lis 2025') && feedRows[1] === 'Ala Testowa Sesja Librusa wygasła. Zaloguj się ponownie.', feedRows);
+check('push: feed state per student', feedRows[0]?.startsWith('Jan Testowy Sprawdzono 9 lis 2025') && feedRows[1] === 'Ala Testowa Sesja Librusa wygasła. Zaloguj ponownie' &&
+  (await js(`[...document.querySelectorAll('main .access li:nth-child(2) button')].map((b) => b.textContent.trim()).join()`)) === 'Zaloguj ponownie', feedRows);
 await shot('17-push');
-await clickText('main button', 'Wyłącz na tym urządzeniu');
+await clickText('main button', 'Wyłącz');
 await until(hasButton('Włącz powiadomienia'));
 check('push: turning it off removes the device from the server and the browser', (await js('window.__sub')) === null &&
   (await log()).includes('DELETE /api/push {"endpoint":"https://fcm.googleapis.com/fcm/send/e2e"}'), (await log()).filter((l) => l.includes('/api/push')));
 
 await go('#/dostep', `document.querySelectorAll('main .access li').length > 0`);
 const access = await rows('main .access li');
-check('access: added address with state, then fixed ones', access.length === 2 && access[0].startsWith('ala@example.com zalogowany, dodany') && access[1] === 'rodzic@example.com', access);
+check('access: added address with state, then fixed ones', access.length === 2 && access[0].startsWith('ala@example.com zalogowany · dodany') && access[1] === 'rodzic@example.com', access);
 await setField('form.compose input', 'a@b');
 await submit();
 await until(`!!document.querySelector('main [role=alert]')`);
@@ -450,18 +544,18 @@ check('student remembered', (await js(`localStorage.getItem('student')`)) === '2
 // The second student's school also grades with points, words and descriptions, and the account has no Mobilne Dodatki.
 await go('#/oceny', `[...document.querySelectorAll('main h2')].some((h) => h.textContent === 'Oceny opisowe')`);
 const bySubject = Object.fromEntries(await js(`[...document.querySelectorAll('main section')].map((s) => [s.querySelector('h2').textContent, s.innerText.replace(/\\s+/g, ' ')])`));
-check('grades: every system lands under its subject, a grade flagged semestral gets its own line', /śr\. I sem\. 71\.50 I sem\. 3 5 Ocena semestralna: zwolniony/.test(bySubject['Język polski']) && bySubject['Matematyka']?.includes('II sem. ZA B') &&
+check('grades: every system lands under its subject, a grade flagged semestral gets its own line', /śr\. I sem\. 71,50 I sem\. 3 5\/20 Semestralna zw/.test(bySubject['Język polski']) && bySubject['Matematyka']?.includes('II sem. ZA B') &&
   bySubject['Oceny opisowe'] === 'Oceny opisowe Opis UC', bySubject);
 const detailOf = async (chip) => {
   await clickText('.chip', chip);
   await sleep(100);
   return (await text('.detail'))[0];
 };
-const kinds = [await detailOf('5'), await detailOf('ZA'), await detailOf('B'), await detailOf('UC')];
+const kinds = [await detailOf('5/20'), await detailOf('ZA'), await detailOf('B'), await detailOf('UC')];
 check('grades: points with their range and comment, word and descriptive grades in full', JSON.stringify(kinds) === JSON.stringify([
-  'Sprawdzian, 0–20 pkt, 20 paź 2026, Anna Nowak\nBrawo', 'Bez kategorii, 21 paź 2026, Piotr\nzaliczono',
-  'Czytanie, 22 paź 2026, Anna Nowak\nCzyta płynnie', 'Ocena śródroczna, 23 paź 2026, Anna Nowak\nUczeń pracuje wytrwale.']), kinds);
-check('grades: only the 1 to 6 scale is coloured', await js(`['5', 'ZA', 'B', 'UC'].every((v) => [...document.querySelectorAll('.chip')].find((c) => c.textContent.trim() === v).classList.contains('g0'))`));
+  'Sprawdzian, 0–20 pkt\n20 paź · Anna Nowak\nBrawo', 'Bez kategorii\n21 paź · Piotr\nzaliczono',
+  'Czytanie\n22 paź · Anna Nowak\nCzyta płynnie', 'Ocena śródroczna\n23 paź · Anna Nowak\nUczeń pracuje wytrwale.']), kinds);
+check('grades: only the 1 to 6 scale is coloured', await js(`['5/20', 'ZA', 'B', 'UC'].every((v) => [...document.querySelectorAll('.chip')].find((c) => c.textContent.trim() === v).classList.contains('g0'))`));
 const probes = (await log()).filter((l) => /^GET \/api\/s\/1001u\/(PointGrades|TextGrades|DescriptiveGrades|DescriptiveTextGrades|DescriptiveGrades\/Text)$/.test(l));
 check('grades: a system the school does not use is not asked about on every visit', probes.length === 10, probes);
 await shot('18-grades-systems');
@@ -476,27 +570,72 @@ await go('#/wiadomosci', `document.querySelectorAll('.messages li').length === 2
 const webInbox = await js(`[...document.querySelectorAll('.messages li')].map((li) => [li.querySelector('.who').textContent, li.querySelector('.subject').textContent, li.querySelector('time').title])`);
 check('webmail: received folder, unread one marked', JSON.stringify(webInbox) === JSON.stringify([['Nowak Anna (nauczyciel)', 'Zebranie', '9 lis 2026, 08:15'], ['Zieliński Piotr', 'Regulamin', '2 lis 2026, 10:00']]) &&
   JSON.stringify(await text('.messages li.unread .subject')) === JSON.stringify(['Zebranie']), webInbox);
-check('webmail: reading only, and the screen says so', (await mainText()).includes('czytane ze strony Synergii') && !(await js(`[...document.querySelectorAll('main a')].some((a) => a.textContent.trim() === 'Napisz')`)));
+check('webmail: writing is offered like on any account', await js(`[...document.querySelectorAll('main a')].some((a) => a.textContent.trim() === 'Napisz')`));
 await clickText('.segmented button', 'Wysłane');
 await until(`document.querySelectorAll('.messages li').length === 1`);
 check('webmail: sent folder loaded on demand', (await rows('.messages li'))[0]?.startsWith('Do: Nowak Anna (nauczyciel) Pytanie o wycieczkę ') && (await js(`document.querySelector('.messages time').title`)) === '3 lis 2026, 17:30' && (await log()).filter((l) => l === 'GET /api/w/2002u/wiadomosci/6').length === 1, await rows('.messages li'));
 await js(`document.querySelector('.messages a').click()`);
-await until(`!!document.querySelector('main article h2')`);
+await until(`!!document.querySelector('main article')`);
 check('webmail: sent message lists its recipients', (await mainText()).includes('Do: Nowak Anna (nauczyciel)') && !(await mainText()).includes('Od:') && (await mainText()).includes('Czy wycieczka jest aktualna?'), await mainText());
-await go('#/wiadomosci/5-301', `!!document.querySelector('main article h2')`);
+await go('#/wiadomosci/5-301', `!!document.querySelector('main article')`);
 const webMsg = await js(`document.querySelector('main article').innerText`);
-check('webmail: message read from the page', webMsg.startsWith('Zebranie') && webMsg.includes('Od: Nowak Anna (nauczyciel)') && webMsg.includes('9 lis 2026, 08:15') && webMsg.includes('zebranie we wtorek'), webMsg);
+check('webmail: message read from the page', (await text('main h1'))[0] === 'Zebranie' && webMsg.includes('Od: Nowak Anna (nauczyciel)') && webMsg.includes('9 lis 2026, 08:15') && webMsg.includes('zebranie we wtorek'), webMsg);
 check('webmail: page content is text, nothing in it runs', (await js(`window.pwned === undefined && !document.querySelector('main img, main script')`)) &&
-  (await js(`document.querySelector('main .rich a')?.href`)) === 'https://example.com/z' && !(await js(`[...document.querySelectorAll('main a')].some((a) => a.textContent.trim() === 'Odpowiedz')`)));
+  (await js(`document.querySelector('main .rich a')?.href`)) === 'https://example.com/z');
 check('webmail: opening a message clears the badge', await until(`!document.querySelector('nav.tabs .badge')`));
 await go('#/wiadomosci/5-300', `!!document.querySelector('main article .files')`);
 const webFile = await openFile('regulamin.pdf');
 check('webmail: attachment opens the link the site hands out', webFile === 'https://sandbox.librus.pl/GetFile/key' && (await log()).includes('GET /api/w/2002u/wiadomosci/pobierz_zalacznik/300/9'), webFile);
 await shot('19-webmail');
+
+// Writing on that account fills in the site's own form.
+const posted = async (prefix) => JSON.parse((await log()).filter((l) => l.startsWith(prefix)).at(-1)?.slice(prefix.length) ?? 'null');
+await go('#/wiadomosci/6-400', `!!document.querySelector('main article')`);
+check('webmail: a sent message has no reply form on the site, so none is offered', !(await js(`[...document.querySelectorAll('main a')].some((a) => a.textContent.trim() === 'Odpowiedz')`)));
+await go('#/wiadomosci/nowa', `document.querySelectorAll('.receivers details').length > 0`);
+const webSections = await text('.receivers summary');
+check('webmail compose: the groups the site offers, parents and empty groups left out',
+  JSON.stringify(webSections) === JSON.stringify(['Wychowawcy\n0 z 1', 'Nauczyciele\n0 z 2']) && !(await log()).some((l) => l.includes('rada_rodzicow')), webSections);
+await setField(subjectInput, 'blad');
+await setField('.compose textarea', 'Czy zebranie jest o 17?');
+await js(`document.querySelectorAll('.receivers details').forEach((d) => d.querySelector('.check input').click())`);
+await submit();
+await until(`!!document.querySelector('main [role=alert]')`);
+check('webmail compose: one group per message, as on the site', (await text('main [role=alert]'))[0]?.includes('z jednej grupy') &&
+  !(await log()).some((l) => l.startsWith('POST /api/w/2002u/wiadomosci')), await text('main [role=alert]'));
+await js(`document.querySelector('.picked .pill').click()`);
+await submit();
+await until(`(document.querySelector('main [role=alert]')?.textContent ?? '').includes('nie potwierdził')`);
+check('webmail compose: a form the site turns down is not reported as sent', (await text('main [role=alert]'))[0]?.includes('nie potwierdził') && (await js(`location.hash`)) === '#/wiadomosci/nowa', await text('main [role=alert]'));
+await shot('24-webmail-compose');
+await setField(subjectInput, 'Pytanie o zebranie');
+await submit();
+await until(`location.hash === '#/wiadomosci/6-401' && !!document.querySelector('main article')`);
+const webNew = await posted('POST /api/w/2002u/wiadomosci/5 ');
+check('webmail compose: the form goes out with its hidden fields and the whole group list', JSON.stringify(webNew) === JSON.stringify([
+  ['requestkey', 'KEY-NEW'], ['filtrUzytkownikow', '0'], ['idPojemnika', ''], ['Rodzaj', '0'], ['poprzednia', '5'], ['fileStorageIdentifier', ''],
+  ['adresat', 'nauczyciel'], ['DoKogo[]', '1000001'], ['DoKogo_hid[]', '1000001'], ['DoKogo_hid[]', '1000002'],
+  ['temat', 'Pytanie o zebranie'], ['tresc', 'Czy zebranie jest o 17?'], ['wyslij', 'Wyślij']]), webNew);
+check('webmail compose: opens the message found in the sent folder', (await text('.toast'))[0] === 'Wiadomość wysłana.' &&
+  (await text('main h1'))[0] === 'Pytanie o zebranie' && (await mainText()).includes('Do: Nowak Anna'), await mainText());
+await go('#/wiadomosci/5-301', `!!document.querySelector('main article')`);
+await clickText('main a', 'Odpowiedz');
+await until(`!!document.querySelector('form.compose')`);
+check('webmail reply: recipient and subject prefilled', (await mainText()).includes('Do: Nowak Anna (nauczyciel)') &&
+  (await js(`document.querySelector('.compose label input').value`)) === 'Re: Zebranie' && !(await js(`!!document.querySelector('.receivers')`)));
+await setField('.compose textarea', 'Będę.');
+await submit();
+await until(`location.hash === '#/wiadomosci/6-402' && !!document.querySelector('main article')`);
+const webReply = await posted('POST /api/w/2002u/wiadomosci ');
+check('webmail reply: the reply form goes out as the site built it', JSON.stringify(webReply) === JSON.stringify([
+  ['requestkey', 'KEY-REPLY'], ['filtrUzytkownikow', '0'], ['idPojemnika', ''], ['poprzednia', '5'], ['DoKogo', '1000001'], ['Wid', '301'],
+  ['idWiadomosciOrg', '301'], ['idOdpowiadajacego', '0'], ['typ', 'odp'], ['fileStorageIdentifier', ''],
+  ['temat', 'Re: Zebranie'], ['tresc', 'Będę.'], ['wyslij', 'Wyślij']]), webReply);
+check('webmail reply: opens the sent reply', (await text('.toast'))[0] === 'Wiadomość wysłana.' && (await text('main h1'))[0] === 'Re: Zebranie');
 await go('#/zachowanie', `document.querySelectorAll('main .entries li').length === 2`);
 const behaviour = [(await text('main section:last-of-type h2'))[0], ...(await rows('main .entries li'))];
 check('behaviour: symbol entries, category range and comment, no total that would be partial', JSON.stringify(behaviour) === JSON.stringify([
-  'Punkty i wpisy', '5 Konkurs, 5 pkt12 paź 2026, Anna Nowak', 'WC Wagary, od -10 do -5 pkt5 paź 2026, Anna Nowak, Dwie godziny']), behaviour);
+  'Punkty i wpisy', '5 Konkurs, 5 pkt12 paź · Anna Nowak', 'WC Wagary, od -10 do -5 pkt5 paź · Anna Nowak · Dwie godziny']), behaviour);
 
 await go('#/uwagi', `!!document.querySelector('main [role=alert]')`);
 check('errors: any other refusal quotes Librus', (await text('main [role=alert]'))[0] === 'Szkoła nie udostępnia tego modułu. Librus: „Brak dostępu.”', await text('main [role=alert]'));
@@ -511,6 +650,8 @@ await send('Emulation.setEmulatedMedia', { features: [] });
 // A wide screen: the bar and the tabs give way to a labelled sidebar. Both students get one name for this part.
 await fetch(`${base}/__twins`);
 await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+// A desktop with a mouse: fine pointer, so the denser sidebar rows apply.
+await send('Emulation.setTouchEmulationEnabled', { enabled: false });
 await send('Page.reload');
 await until(`!!document.querySelector('.side .nav-row[aria-current=page]')`);
 await go('#/start', `document.querySelectorAll('main .events li').length > 0 && ${loaded}`);
@@ -521,18 +662,25 @@ const twins = await rows('.side .account');
 check('desktop: accounts with one name are told apart, a pupil from a parent', JSON.stringify(twins) === JSON.stringify(['JT Jan Testowyuczeń', 'JT Jan Testowyrodzic']) &&
   (await js(`document.querySelectorAll('.side .account[aria-pressed=true]').length`)) === 1, twins);
 check('phone: the picker carries the same hint', JSON.stringify(await js(`[...document.querySelectorAll('.bar option')].map((o) => o.textContent)`)) === JSON.stringify(['Jan Testowy · uczeń', 'Jan Testowy · rodzic']));
-check('desktop: start page lays its panels out in two columns', await js(`(() => { const [a, b] = document.querySelectorAll('.panels > .card'); return a.getBoundingClientRect().top === b.getBoundingClientRect().top && document.documentElement.scrollWidth <= innerWidth; })()`));
+check('desktop: start page lays its panels out in two columns', await js(`(() => { const [a, b] = document.querySelectorAll('.panels > .col'); return a.getBoundingClientRect().top === b.getBoundingClientRect().top && document.documentElement.scrollWidth <= innerWidth; })()`));
 await shot('20-desktop-start');
 await clickText('.side .nav-row .grow', 'Oceny');
 await until(`document.querySelector('h1.title')?.textContent === 'Oceny' && ${loaded}`);
 check('desktop: the sidebar navigates and marks the place', (await text('.side .nav-row[aria-current=page]'))[0] === 'Oceny');
 await shot('21-desktop-grades');
+await js(`document.querySelector('.sheet h2').textContent = 'administrowanie systemami operacyjnymi'; document.querySelector('.sheet .chip').click()`);
+await until(`!!document.querySelector('.sheet .detail')`);
+const longName = await js(`(() => { const s = document.querySelector('.sheet section'); const r = (q) => s.querySelector(q).getBoundingClientRect();
+  return { gap: Math.round(r('.detail').top - r('.chips').bottom), nameBottom: Math.round(r('h2').bottom), detailTop: Math.round(r('.detail').top) }; })()`);
+check('desktop grades: an opened grade sits under its chips, not under a subject name that wraps', longName.gap <= 12 && longName.nameBottom > longName.detailTop, longName);
+await shot('21-desktop-grades-long');
 await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
 await go('#/aktywnosc', loaded);
 await go('#/start', `document.querySelectorAll('main .events li').length > 0 && ${loaded}`);
 await shot('22-desktop-start-dark');
 await send('Emulation.setEmulatedMedia', { features: [] });
 await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+await send('Emulation.setTouchEmulationEnabled', { enabled: true });
 
 await go('#/oceny', `document.querySelectorAll('main h2').length > 0`);
 check('service worker active', await js(`navigator.serviceWorker.ready.then((r) => !!r.active)`));
@@ -557,6 +705,24 @@ await sleep(1000);
 check('page controlled by SW after reload', await js(`!!navigator.serviceWorker.controller`));
 const apiCached = await js(`caches.open('api-v1').then((c) => c.keys()).then((k) => k.length)`);
 check('api responses cached (bounded)', apiCached > 0 && apiCached <= 120, apiCached);
+
+// A new build on the server: another index.html, and sw.js stamped anew. Put back right after.
+const dist = new URL('../dist/', import.meta.url);
+const [html0, worker0] = await Promise.all([readFile(new URL('index.html', dist), 'utf8'), readFile(new URL('sw.js', dist), 'utf8')]);
+const entry = html0.match(/\/assets\/index-[^"]+\.js/)[0];
+await copyFile(new URL(`.${entry}`, dist), new URL('assets/index-next.js', dist));
+await writeFile(new URL('index.html', dist), html0.replace(entry, '/assets/index-next.js'));
+await writeFile(new URL('sw.js', dist), worker0 + '// build next\n');
+check('update: nothing offered while the build is current', !(await js(`!!document.querySelector('.banner button')`)));
+await js(`document.dispatchEvent(new Event('visibilitychange'))`);
+const offered = await until(`document.querySelector('.banner[role=status] button')?.textContent === 'Zaktualizuj'`, 8000);
+check('update: coming back to the app finds the new build and offers it', offered, await text('.banner'));
+await shot('25-update');
+await js(`window.__old = true`);
+await js(`document.dispatchEvent(new Event('visibilitychange'))`);
+const reloaded = await until(`!window.__old && !!document.querySelector('script[src="/assets/index-next.js"]') && document.querySelectorAll('main h2').length > 0`, 8000);
+check('update: and the next time it switches to it by itself', reloaded && !(await js(`!!document.querySelector('.banner button')`)));
+await Promise.all([writeFile(new URL('index.html', dist), html0), writeFile(new URL('sw.js', dist), worker0), rm(new URL('assets/index-next.js', dist))]);
 
 await send('Network.enable');
 process.kill(Number(mockPid));

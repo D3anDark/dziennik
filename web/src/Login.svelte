@@ -6,6 +6,8 @@
   let password = $state('');
   let busy = $state(false);
   let error = $state('');
+  /** Typed on a phone keyboard, a password is easy to get wrong unseen. */
+  let shown = $state(false);
 
   async function submit(e) {
     e.preventDefault();
@@ -25,7 +27,6 @@
 </script>
 
 <form class="login card" onsubmit={submit}>
-  <span class="brand" aria-hidden="true"><Icon name="book" size={28} /></span>
   <h1>Dziennik</h1>
   <p class="muted">Zaloguj się kontem LIBRUS (e-mail i hasło z portal.librus.pl).</p>
   <label>
@@ -34,10 +35,16 @@
   </label>
   <label>
     Hasło
-    <input type="password" name="password" autocomplete="current-password" enterkeyhint="go" required bind:value={password} />
+    <span class="reveal">
+      <input type={shown ? 'text' : 'password'} name="password" autocomplete="current-password" enterkeyhint="go" spellcheck="false" autocapitalize="none" required bind:value={password} />
+      <button type="button" class="icon-btn" aria-pressed={shown} aria-label="Pokaż hasło" title="Pokaż hasło" onclick={() => (shown = !shown)}>
+        <Icon name={shown ? 'eye-off' : 'eye'} size={20} />
+      </button>
+    </span>
   </label>
   {#if error}
     <p class="error" role="alert">{error}</p>
   {/if}
   <button class="primary" disabled={busy}>{busy ? 'Logowanie…' : 'Zaloguj'}</button>
+  <p class="byline">Aplikacja nieoficjalna, niezwiązana z firmą Librus. Hasło przechodzi przez serwer aplikacji do Librusa i nie jest zapisywane.</p>
 </form>

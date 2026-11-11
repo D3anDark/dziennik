@@ -39,16 +39,16 @@
 <form class="card compose" onsubmit={add}>
   <label>
     E-mail konta LIBRUS
-    <input type="email" name="email" required maxlength="254" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="done" bind:value={email} />
+    <input type="email" name="email" placeholder="uczen@przyklad.pl" required maxlength="254" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="done" bind:value={email} />
   </label>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-  <button class="primary" disabled={busy}><Icon name="plus" size={20} />Daj dostęp</button>
+  <button class="primary" disabled={busy || !email.trim()}><Icon name="plus" size={20} />Daj dostęp</button>
 </form>
 
 <Async r={list}>
   {#snippet children(d)}
     <section class="card">
-      <h2>Dodane adresy: {d.emails.length}</h2>
+      <h2>Dodane adresy <span class="muted count">{d.emails.length}</span></h2>
       {#if !d.emails.length}
         <p class="muted">Nikt jeszcze nie dostał dostępu.</p>
       {:else}
@@ -57,7 +57,7 @@
             <li>
               <span class="grow">
                 {a.email}
-                <small class="muted">{a.active ? 'zalogowany' : 'niezalogowany'}, dodany {fmtUnix(a.added)}</small>
+                <small class="muted">{a.active ? 'zalogowany' : 'niezalogowany'} · dodany {fmtUnix(a.added)}</small>
               </span>
               <button class="icon-btn" disabled={busy} onclick={() => remove(a.email)} aria-label="Odbierz dostęp: {a.email}" title="Odbierz dostęp">
                 <Icon name="close" />

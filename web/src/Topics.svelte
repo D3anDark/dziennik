@@ -36,19 +36,19 @@
       .map(([date, list]) => ({ date, list: list.sort((p, q) => Number(p.no) - Number(q.no)) }));
   }
 
-  const days = resource(() => load(login));
+  const days = resource(() => load(login), () => `topics/${login}`);
 </script>
 
 <Async r={days} empty="Brak tematów lekcji.">
   {#snippet children(all)}
     {#each all.slice(0, shown) as d (d.date)}
       <section class="card">
-        <h2>{fmtDay(d.date)}</h2>
+        <h2 class="day">{fmtDay(d.date)}</h2>
         <ul class="events">
           {#each d.list as l (l.id)}
             <li>
               <strong>{l.subject}</strong>
-              <small class="muted">{[l.no && `lekcja ${l.no}`, l.teacher].filter(Boolean).join(', ')}</small>
+              <small class="muted">{[l.no && `lekcja ${l.no}`, l.teacher].filter(Boolean).join(' · ')}</small>
               {#if l.topic}<Rich text={l.topic} />{/if}
             </li>
           {/each}

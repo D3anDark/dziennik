@@ -20,7 +20,7 @@
       .sort((p, q) => p.name.localeCompare(q.name, 'pl'));
   }
 
-  const list = resource(() => load(login));
+  const list = resource(() => load(login), () => `teachers/${login}`);
 
   /** Class and school rows from Classes and Schools; every part is optional, so a refusal just leaves it out. */
   async function about(login) {
@@ -35,7 +35,7 @@
     ].filter(([, v]) => v);
   }
 
-  const info = resource(() => about(login));
+  const info = resource(() => about(login), () => `class/${login}`);
 </script>
 
 {#if info.data?.length}

@@ -19,15 +19,15 @@
     month = { y: d.getFullYear(), m: d.getMonth() + 1 };
   }
 
-  const events = resource(() => monthEvents(login, month.y, month.m));
+  const events = resource(() => monthEvents(login, month.y, month.m), () => `calendar/${login}/${month.y}-${month.m}`);
 </script>
 
-<div class="weeknav">
-  <button onclick={() => move(-1)}><Icon name="left" size={18} />Poprzedni</button>
-  <button onclick={() => (month = now)} disabled={month.y === now.y && month.m === now.m}>Ten miesiąc</button>
-  <button onclick={() => move(1)}>Następny<Icon name="right" size={18} /></button>
+<div class="pager">
+  <button class="icon-btn" onclick={() => move(-1)} aria-label="Poprzedni miesiąc" title="Poprzedni miesiąc"><Icon name="left" /></button>
+  <h2 class="range" aria-live="polite">{label}</h2>
+  <button class="icon-btn" onclick={() => move(1)} aria-label="Następny miesiąc" title="Następny miesiąc"><Icon name="right" /></button>
+  <button class="secondary now" onclick={() => (month = now)} disabled={month.y === now.y && month.m === now.m}>Dziś</button>
 </div>
-<h2 class="month">{label}</h2>
 
 <div class="swipe" use:swipe={{ prev: () => move(-1), next: () => move(1) }}>
   <Async r={events} empty="Brak wpisów w tym miesiącu.">

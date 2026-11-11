@@ -1,5 +1,5 @@
 import { api, synergia, lookup, byId } from './api.svelte.js';
-import { iso, fmtDate, person, plain, gradeTone } from './util.js';
+import { iso, fmtDate, person, plain, gradeTone, room, today, shift } from './util.js';
 
 /**
  * Every grading system Synergia has. A school uses one or two and
@@ -31,6 +31,43 @@ function final(grade, category) {
 
 // Loads in flight, by login: two panels of one screen asking at once share one.
 const loading = new Map();
+
+/** The ids of new grades already opened on this device, by login. Librus keeps no read state for grades. */
+export const SEEN_PREFIX = 'seen-grades/';
+
+function seenIds(login) {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SEEN_PREFIX + login) ?? '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSeen(login, ids) {
+  try {
+    localStorage.setItem(SEEN_PREFIX + login, JSON.stringify([...ids]));
+  } catch {
+    // Storage blocked or full: the dots come back on the next load, nothing else is lost.
+  }
+}
+
+/**
+ * The grades that are new: added in the last 7 days and not opened yet on this device. What the dot on a chip
+ * and "nowe oceny" on Start count. Opened ids out of the 7 days are dropped, so the list stays a week of grades.
+ */
+export function unseenGrades(login, items) {
+  const since = shift(today(), -7);
+  const recent = items.filter((g) => g.added.slice(0, 10) > since);
+  const seen = seenIds(login);
+  const kept = new Set(recent.filter((g) => seen.has(g.id)).map((g) => g.id));
+  if (kept.size !== seen.size) saveSeen(login, kept);
+  return new Set(recent.filter((g) => !kept.has(g.id)).map((g) => g.id));
+}
+
+/** A new grade opened: no longer new, here and on Start. */
+export function markGradeSeen(login, id) {
+  saveSeen(login, seenIds(login).add(id));
+}
 
 /**
  * Grades of every system the school uses: { items, averages } with averages keyed like `item.subject`.
@@ -73,14 +110,18 @@ async function loadGrades(login) {
         s.averages ? synergia(login, s.averages).catch(soft) : {},
       ]);
       const [dict, comments] = [byId(d.Categories ?? d.Skills), byId(c.Comments)];
-      for (const av of a.Averages ?? []) averages.set(String(av.Subject?.Id), av);
+      // One average a subject: with grades in both systems, the 1 to 6 scale's, however the answers race.
+      for (const av of a.Averages ?? []) if (s.path === 'Grades' || !averages.has(String(av.Subject?.Id))) averages.set(String(av.Subject?.Id), av);
       for (const gr of lists[i]) {
         const ref = gr[s.ref];
         const category = dict.get(String(ref?.Id ?? ref));
         const full = String(gr.Map ?? gr.RealGradeValue ?? gr.Grade ?? '');
         const kind = final(gr, category);
         // A semester or year grade is one line of its own and stays whole; the rest share a row of chips.
-        const value = s.short && full.length > 2 && !kind ? full.slice(0, 2).toUpperCase() : full;
+        const cut = s.short && full.length > 2 && !kind;
+        // Points carry their maximum, so a 5 of 20 is not read as a 5 on the 1 to 6 scale beside it.
+        const max = s.path === 'PointGrades' && full && category?.ValueTo != null ? `/${category.ValueTo}` : '';
+        const value = cut ? full.slice(0, 2).toUpperCase() : full + max;
         items.push({
           id: `${s.path}/${gr.Id}`,
           subject: s.whole ? 'whole' : String(gr.Subject?.Id),
@@ -88,7 +129,7 @@ async function loadGrades(login) {
           value,
           // Only the 1 to 6 scale has colours that mean something.
           tone: s.path === 'Grades' ? gradeTone(value) : 'g0',
-          text: [value === full ? '' : full, gr.Phrase].map(plain).filter(Boolean).join(' '),
+          text: [cut ? full : '', gr.Phrase].map(plain).filter(Boolean).join(' '),
           date: gr.Date ?? gr.AddDate,
           added: gr.AddDate ?? '',
           semester: s.whole ? 0 : Number(gr.Semester) === 2 ? 2 : 1,
@@ -101,6 +142,8 @@ async function loadGrades(login) {
       }
     }),
   );
+  // The systems answer in any order; by date, a row of chips reads the same on every load.
+  items.sort((p, q) => String(p.date ?? '').localeCompare(String(q.date ?? '')) || p.added.localeCompare(q.added) || p.id.localeCompare(q.id));
   return { items, averages };
 }
 
@@ -117,10 +160,9 @@ function change(l, date, users, subjects) {
     next && `zmiana na: ${next}`,
     l.OrgDate && l.OrgDate !== date && `przeniesiona z ${fmtDate(l.OrgDate)}`,
     l.NewDate && l.NewDate !== date && `przeniesiona na ${fmtDate(l.NewDate)}`,
-    plain(l.SubstitutionNote),
   ]
     .filter(Boolean)
-    .join('; ');
+    .join('\n');
 }
 
 /** What a change is called (new, changed, removed) and where it shows, by the resource type of the change feed. */
@@ -149,15 +191,20 @@ const NEWS = {
  * [{ key, at, text, page, grade }]. A new or changed grade that still exists comes with its value and subject.
  */
 export async function activity(login) {
-  const [{ entries }, marks] = await Promise.all([
+  const [{ entries }, marks, me] = await Promise.all([
     api(`activity/${encodeURIComponent(login)}`),
     grades(login).then((g) => new Map(g.items.map((x) => [x.id, x])), () => new Map()),
+    lookup(login, 'Me'),
   ]);
+  // Only an account with Mobilne Dodatki reads messages by their API id; the rest go through the website (webmail.js).
+  const paid = Boolean(me.Me?.Account?.IsPremium || me.Me?.Account?.IsPremiumDemo);
   return entries.flatMap((e, i) => {
     const words = NEWS[e.kind];
     if (!words) return [];
     const [text, page] = [words[['Add', 'Edit', 'Delete'].indexOf(e.change)], words[3]];
-    return text ? [{ key: `${e.at}/${i}`, at: e.at, text, page, grade: marks.get(`${e.kind}/${e.resource}`) }] : [];
+    // A new message opens itself.
+    const one = paid && e.kind === 'Messages' && e.change === 'Add' && /^\d+$/.test(e.resource);
+    return text ? [{ key: `${e.at}/${i}`, at: e.at, text, gone: e.change === 'Delete', page: one ? `${page}/${e.resource}` : page, grade: marks.get(`${e.kind}/${e.resource}`) }] : [];
   });
 }
 
@@ -171,7 +218,7 @@ export function upcomingDay(days, now = new Date()) {
   return days.find((d) => d.date >= date && ahead(d)) ?? null;
 }
 
-/** One timetable week: [{ date, lessons }] sorted, each lesson with `room` and `change` resolved. */
+/** One timetable week: [{ date, lessons }] sorted, each lesson with `room`, `change` and the teacher's `note` resolved. */
 export async function week(login, weekStart) {
   const t = (await synergia(login, `Timetables?weekStart=${weekStart}`)).Timetable ?? {};
   const out = Object.keys(t)
@@ -200,6 +247,7 @@ export async function week(login, weekStart) {
     for (const l of d.lessons) {
       l.room = rooms.get(String(l.Classroom?.Id))?.Symbol ?? '';
       l.change = change(l, d.date, users, subjects);
+      l.note = plain(l.SubstitutionNote);
     }
   }
   return out;
@@ -270,7 +318,7 @@ export async function monthEvents(login, year, month) {
       kind: 'meeting',
       title: plain(e.Name) || 'Wywiadówka',
       detail: plain(e.Topic),
-      when: [e.Time && e.Time !== '00:00:00' ? e.Time.slice(0, 5) : '', e.Room ? `sala ${e.Room}` : ''].filter(Boolean).join(', '),
+      when: [e.Time && e.Time !== '00:00:00' ? e.Time.slice(0, 5) : '', e.Room ? room(e.Room) : ''].filter(Boolean).join(' · '),
       who: who(e.Teacher),
     })),
   ];

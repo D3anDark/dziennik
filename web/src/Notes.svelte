@@ -31,17 +31,19 @@
       .sort((p, q) => q.date.localeCompare(p.date));
   }
 
-  const list = resource(() => load(login));
+  const list = resource(() => load(login), () => `notes/${login}`);
 </script>
 
 <Async r={list} empty="Brak uwag.">
   {#snippet children(items)}
-    {#each items as n (n.id)}
-      <article class="card note {n.type}">
-        <h2>{[n.category, n.type].filter(Boolean).join(', ') || 'Uwaga'}</h2>
-        <p class="muted">{[fmtDate(n.date), n.who].filter(Boolean).join(', ')}</p>
-        <Rich text={n.text} />
-      </article>
-    {/each}
+    <div class="card stack">
+      {#each items as n (n.id)}
+        <article class="note {n.type}">
+          <h2>{n.category || 'Uwaga'} {#if n.type}<span class="tag" class:plain={n.type !== 'negatywna'}>{n.type}</span>{/if}</h2>
+          <p class="byline">{[fmtDate(n.date), n.who].filter(Boolean).join(' · ')}</p>
+          <Rich text={n.text} />
+        </article>
+      {/each}
+    </div>
   {/snippet}
 </Async>

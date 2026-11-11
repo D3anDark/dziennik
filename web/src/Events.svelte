@@ -17,14 +17,14 @@
 </script>
 
 {#each days as [date, list] (date)}
-  <section class:card={!flat} class:today={!flat && date === today}>
-    <svelte:element this={flat ? 'h3' : 'h2'} class:section={flat}>{fmtDay(date)}</svelte:element>
+  <section class:card={!flat} class:day-group={flat} class:today={!flat && date === today}>
+    <svelte:element this={flat ? 'h3' : 'h2'} class={flat ? 'section' : 'day'}>{fmtDay(date)}</svelte:element>
     <ul class="events">
       {#each list as e (e.id)}
         <li class={e.kind}>
           <strong>{e.title}</strong>
           <small class="muted">
-            {[e.to && `do ${fmtDate(e.to)}`, e.when, e.who].filter(Boolean).join(', ')}
+            {[e.to && `do ${fmtDate(e.to)}`, e.when, e.who].filter(Boolean).join(' · ')}
           </small>
           {#if e.detail}<Rich text={e.detail} />{/if}
         </li>

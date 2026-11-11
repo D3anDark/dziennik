@@ -1,11 +1,14 @@
 //! Pages of the Synergia website, read with a session opened from the API token (POST AutoLoginToken, then
 //! /loguj/token/<token>/przenies/<path>).
-//! The website gives every account the modules the API keeps for paid ones.
+//! The website gives every account the modules the API keeps for paid ones. Messages are sent the way its own form
+//! does it: POST getRecipients for the people of a group, then the form of wiadomosci/2/5 (new) or
+//! wiadomosci/3/5/<id> (reply) as multipart.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use reqwest::header::LOCATION;
+use reqwest::multipart::Form;
 use reqwest::{Client, StatusCode, Url, redirect};
 use serde_json::Value;
 
@@ -15,8 +18,9 @@ use crate::{ApiError, App, librus};
 const IDLE: Duration = Duration::from_secs(20 * 60);
 const MAX_SESSIONS: usize = 200;
 const MAX_PAGE: usize = 2 * 1024 * 1024;
-/// On every page of the message module, and not on the sign-in page an ended session is given instead.
-const SIGNED_IN: &str = "container-message";
+/// On every page of the message module, and not on the sign-in page an ended session is given instead. The reply
+/// form has only the second.
+const SIGNED_IN: [&str; 2] = ["container-message", "formWiadomosci"];
 /// Attachments are handed out by this host under a keyed link that needs no session.
 const FILES_HOST: &str = "sandbox.librus.pl";
 const UPSTREAM: ApiError = ApiError(StatusCode::BAD_GATEWAY, "upstream");
@@ -83,10 +87,7 @@ async fn session(app: &App, email: &str, login: &str, key: &str) -> Result<Clien
     Ok(client)
 }
 
-async fn html(mut res: reqwest::Response) -> Result<Option<String>, ApiError> {
-    if !res.status().is_success() {
-        return Ok(None);
-    }
+async fn text(mut res: reqwest::Response) -> Result<String, ApiError> {
     let mut body = Vec::new();
     while let Some(chunk) = res.chunk().await.map_err(librus::Error::from)? {
         if body.len() + chunk.len() > MAX_PAGE {
@@ -94,8 +95,15 @@ async fn html(mut res: reqwest::Response) -> Result<Option<String>, ApiError> {
         }
         body.extend_from_slice(&chunk);
     }
-    let page = String::from_utf8_lossy(&body);
-    Ok(page.contains(SIGNED_IN).then(|| page.into_owned()))
+    Ok(String::from_utf8_lossy(&body).into_owned())
+}
+
+async fn html(res: reqwest::Response) -> Result<Option<String>, ApiError> {
+    if !res.status().is_success() {
+        return Ok(None);
+    }
+    let page = text(res).await?;
+    Ok(SIGNED_IN.iter().any(|mark| page.contains(mark)).then_some(page))
 }
 
 fn file_link(res: &reqwest::Response) -> Option<String> {
@@ -122,6 +130,28 @@ pub async fn read(app: &App, email: &str, login: &str, path: &str, file: bool) -
     Err(UPSTREAM)
 }
 
+/// Submits a form of the message module as the signed-in user and returns what the site answers with: a page, or
+/// nothing for a redirect. Never repeated, because a second attempt could send a message twice; the caller reads the
+/// form page first, which opens the session this request needs.
+pub async fn post(app: &App, email: &str, login: &str, path: &str, fields: Vec<(String, String)>, multipart: bool) -> Result<String, ApiError> {
+    let client = session(app, email, login, &format!("{email}/{login}")).await?;
+    let req = client.post(format!("{}/{path}", app.synergia));
+    let req = if multipart {
+        req.multipart(fields.into_iter().fold(Form::new(), |form, (name, value)| form.text(name, value)))
+    } else {
+        req.form(&fields)
+    };
+    let res = req.send().await.map_err(librus::Error::from)?;
+    if res.status().is_redirection() {
+        return Ok(String::new());
+    }
+    if !res.status().is_success() {
+        eprintln!("librus: the website answered a form with {}", res.status());
+        return Err(UPSTREAM);
+    }
+    text(res).await
+}
+
 /// Sessions of an address that lost access.
 pub fn forget(app: &App, email: &str) {
     let prefix = format!("{email}/");
@@ -146,11 +176,13 @@ mod tests {
     #[derive(Default)]
     struct Site {
         calls: Mutex<Vec<String>>,
+        /// Content type and body of every form the site received.
+        posted: Mutex<Vec<String>>,
         issued: Mutex<u32>,
         live: Mutex<u32>,
     }
 
-    async fn site(State(site): State<Arc<Site>>, method: Method, uri: Uri, headers: HeaderMap) -> Response {
+    async fn site(State(site): State<Arc<Site>>, method: Method, uri: Uri, headers: HeaderMap, body: axum::body::Bytes) -> Response {
         let path = uri.path();
         site.calls.lock().unwrap().push(format!("{method} {path}"));
         if path == "/AutoLoginToken" {
@@ -165,8 +197,18 @@ mod tests {
         }
         let cookie = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()).unwrap_or_default();
         let signed_in = cookie == format!("DZIENNIKSID=s{}", site.live.lock().unwrap());
+        if method == Method::POST {
+            let kind = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).and_then(|v| v.split(';').next()).unwrap_or_default();
+            site.posted.lock().unwrap().push(format!("{kind} {}", String::from_utf8_lossy(&body)));
+            return match (path, signed_in) {
+                ("/getRecipients", true) => r#"<input type="checkbox" name="DoKogo[]" value="7">"#.into_response(),
+                ("/wiadomosci/5", true) => (StatusCode::FOUND, [(header::LOCATION, "/wiadomosci/5")]).into_response(),
+                _ => StatusCode::FORBIDDEN.into_response(),
+            };
+        }
         match (path, signed_in) {
             ("/wiadomosci/5", true) => r#"<table class="stretch container-message"><tr><td>odebrane</td></tr></table>"#.into_response(),
+            ("/wiadomosci/3/5/9", true) => r#"<FORM ID="formWiadomosci"><input name="typ" value="odp"></FORM>"#.into_response(),
             ("/wiadomosci/pobierz_zalacznik/1/2", true) => {
                 (StatusCode::FOUND, [(header::LOCATION, "https://sandbox.librus.pl/GetFile/key")]).into_response()
             }
@@ -224,14 +266,35 @@ mod tests {
         forget(&app, "a@x.pl");
         assert!(page().await.is_ok());
         assert_eq!(calls()[0], "POST /AutoLoginToken");
+
+        // The reply form is a page of the module too, though it lacks the marker the folders have.
+        assert!(read(&app, "a@x.pl", "1u", "wiadomosci/3/5/9", false).await.unwrap().contains("odp"));
+        calls();
+
+        // A form goes out once, in the encoding the site's own form uses, on the session the page was read with.
+        let fields = |pairs: &[(&str, &str)]| pairs.iter().map(|&(k, v)| (k.to_string(), v.to_string())).collect::<Vec<_>>();
+        let people = post(&app, "a@x.pl", "1u", "getRecipients", fields(&[("typAdresata", "nauczyciel")]), false).await.unwrap();
+        assert!(people.contains("DoKogo[]"));
+        let message = fields(&[("temat", "Zażółć"), ("DoKogo[]", "7")]);
+        assert_eq!(post(&app, "a@x.pl", "1u", "wiadomosci/5", message.clone(), true).await.unwrap(), "", "a redirect has no page");
+        assert_eq!(calls(), ["POST /getRecipients", "POST /wiadomosci/5"]);
+        let posted = std::mem::take(&mut *fixture.posted.lock().unwrap());
+        assert_eq!(posted[0], "application/x-www-form-urlencoded typAdresata=nauczyciel");
+        assert!(posted[1].starts_with("multipart/form-data "), "{}", posted[1]);
+        assert!(posted[1].contains("name=\"DoKogo[]\"\r\n\r\n7\r\n") && posted[1].contains("name=\"temat\"\r\n\r\nZażółć\r\n"), "{}", posted[1]);
+
+        // The site refuses the form: it is not sent a second time, with or without a new session.
+        *fixture.live.lock().unwrap() = 0;
+        assert!(post(&app, "a@x.pl", "1u", "wiadomosci/5", message, true).await.is_err());
+        assert_eq!(calls(), ["POST /wiadomosci/5"]);
     }
 
     #[test]
     fn readable_paths() {
-        for ok in ["wiadomosci/5", "wiadomosci/6", "wiadomosci/1/5/123456/f0"] {
+        for ok in ["wiadomosci/5", "wiadomosci/6", "wiadomosci/1/5/123456/f0", "wiadomosci/2/5", "wiadomosci/3/5/123456"] {
             assert!(crate::WEB_PAGE_RE.is_match(ok), "{ok}");
         }
-        for bad in ["wiadomosci/7", "wiadomosci/2/5", "wiadomosci/1/5/1/f0/../../x", "ustawienia", "wiadomosci/1/5/abc/f0", "wiadomosci/5?x=1"] {
+        for bad in ["wiadomosci/7", "wiadomosci/2/6", "wiadomosci/3/5/1/x", "wiadomosci/1/5/1/f0/../../x", "ustawienia", "wiadomosci/1/5/abc/f0", "wiadomosci/5?x=1"] {
             assert!(!crate::WEB_PAGE_RE.is_match(bad) && !crate::WEB_FILE_RE.is_match(bad), "{bad}");
         }
         assert!(crate::WEB_FILE_RE.is_match("wiadomosci/pobierz_zalacznik/123/456"));

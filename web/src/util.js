@@ -15,8 +15,15 @@ export const today = () => iso(new Date());
 export const mondayOf = (s) => shift(s, -((parse(s).getDay() + 6) % 7));
 
 export const fmtDay = (s) => parse(s).toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
-export const fmtDate = (s) =>
-  s ? parse(s).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+/** The school year a date belongs to, September to August, by the year it starts in. */
+const schoolYear = (d) => d.getFullYear() - (d.getMonth() < 8);
+/** "14 paź"; the year only for a date outside the current school year. */
+export function fmtDate(s) {
+  if (!s) return '';
+  const d = parse(s);
+  const year = schoolYear(d) !== schoolYear(new Date()) ? { year: 'numeric' } : {};
+  return d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', ...year });
+}
 /** How long ago, in the words a list of news uses: "9 min", "3 godz.", "wczoraj", then the date. */
 export function ago(t) {
   const then = new Date(Number(t) * 1000);
@@ -27,6 +34,17 @@ export function ago(t) {
   if (iso(then) === shift(today(), -1)) return 'wczoraj';
   return then.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', ...(then.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }) });
 }
+
+const percent = new Intl.NumberFormat('pl-PL', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const hundredths = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** "60,0%": Polish writes a decimal comma. */
+export const fmtPercent = (ratio) => percent.format(ratio);
+/** "4,67" */
+export const fmtAverage = (v) => hundredths.format(v);
+
+const plurals = new Intl.PluralRules('pl-PL');
+/** The word that goes with `n`: forms for 1, for 2–4 (22–24…) and for 5 and on, e.g. wiadomość, wiadomości, wiadomości. */
+export const plural = (n, [one, few, many]) => ({ one, few })[plurals.select(n)] ?? many;
 
 export const fmtUnix = (t) =>
   new Date(Number(t) * 1000).toLocaleString('pl-PL', { dateStyle: 'medium', timeStyle: 'short' });
@@ -70,4 +88,7 @@ export function plain(s) {
 }
 
 /** Splits text so http(s) URLs can be rendered as links; odd indices are URLs. */
+/** "sala 104", kept on one line, and a room the school already named "sala gim." as it is. */
+export const room = (name) => (/^sala\b/i.test(name) ? name : `sala\u00a0${name}`);
+
 export const linkParts = (text) => text.split(/(https?:\/\/[^\s<>"]+)/);

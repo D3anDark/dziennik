@@ -1,8 +1,9 @@
 <script>
   import { untrack } from 'svelte';
-  import { synergia, write, message, resource } from './api.svelte.js';
+  import { synergia, write, message, resource, drafts } from './api.svelte.js';
   import Async from './Async.svelte';
   import Icon from './Icon.svelte';
+  import { viaWeb, useWeb, groups as webGroups, send as webSend } from './webmail.js';
 
   /** `original` is the message being answered (from Messages' loadOne), or null for a new message. */
   let { login, original = null, replyId = null, onsent } = $props();
@@ -25,7 +26,18 @@
     ).filter((s) => s.people.length);
   }
 
-  const book = resource(() => (replyId ? Promise.resolve([]) : groups(login)));
+  /** An account the API refuses writes through the Synergia website (webmail.js); its message ids look like "5-123". */
+  const onWeb = () => viaWeb(login) || String(replyId ?? '').includes('-');
+
+  const book = resource(() => {
+    if (replyId) return Promise.resolve([]);
+    if (onWeb()) return webGroups(login);
+    return groups(login).catch((e) => {
+      if (e.message !== 'premium') throw e;
+      useWeb(login);
+      return webGroups(login);
+    });
+  }, () => (replyId ? undefined : `book/${login}`));
 
   // The parent remounts this form per message, so the starting subject is read once.
   let subject = $state(untrack(() => (original ? `Re: ${original.title}` : '')));
@@ -34,13 +46,25 @@
   let filter = $state('');
   let busy = $state(false);
   let error = $state('');
+  let bodyField;
 
-  // Closing the tab or reloading with a message half written asks first.
+  /** Enter on a phone's keyboard would submit the whole form from any field; here only the button sends. */
+  const enter = (then) => (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    then(e.currentTarget);
+  };
+
+  // Closing the tab or reloading with a message half written asks first, and a new build waits (main.js).
   $effect(() => {
     if (!body.trim()) return;
     const warn = (e) => e.preventDefault();
     addEventListener('beforeunload', warn);
-    return () => removeEventListener('beforeunload', warn);
+    untrack(() => drafts.open++);
+    return () => {
+      removeEventListener('beforeunload', warn);
+      untrack(() => drafts.open--);
+    };
   });
 
   const names = $derived(new Map((book.data ?? []).flatMap((s) => s.people.map((p) => [String(p.Id), p.Label]))));
@@ -60,8 +84,7 @@
       const msg = replyId
         ? { subject, body, originalMessageId: replyId }
         : { subject, body, receivers: picked };
-      const r = await write(login, 'Messages', msg);
-      onsent(r?.Message?.Id);
+      onsent(onWeb() ? await webSend(login, msg) : (await write(login, 'Messages', msg))?.Message?.Id);
     } catch (err) {
       error = err.cause ?? message(err);
     } finally {
@@ -70,10 +93,10 @@
   }
 </script>
 
-<p><a class="back" href={replyId ? `#/wiadomosci/${replyId}` : '#/wiadomosci'}><Icon name="left" size={18} />Anuluj</a></p>
+<p><a class="back" href={replyId ? `#/wiadomosci/${replyId}` : '#/wiadomosci'}><Icon name="left" size={18} />{replyId ? 'Wiadomość' : 'Wiadomości'}</a></p>
+<h1 class="title" tabindex="-1">{replyId ? 'Odpowiedź' : 'Nowa wiadomość'}</h1>
 
 <form class="card compose" onsubmit={send}>
-  <h2>{replyId ? 'Odpowiedź' : 'Nowa wiadomość'}</h2>
   {#if replyId}
     <p class="muted">Do: {original?.from ?? '…'}</p>
   {:else}
@@ -92,12 +115,13 @@
       {/if}
       <Async r={book} empty="Brak dostępnych odbiorców.">
         {#snippet children(sections)}
-          <input type="search" name="receiver" placeholder="Szukaj odbiorcy…" aria-label="Szukaj odbiorcy" autocomplete="off" enterkeyhint="search" bind:value={filter} />
+          <input type="search" name="receiver" placeholder="Szukaj odbiorcy…" aria-label="Szukaj odbiorcy" autocomplete="off" enterkeyhint="search" bind:value={filter} onkeydown={enter((field) => field.blur())} />
           {#each sections as s (s.label)}
             {@const shown = query ? s.people.filter((p) => p.Label.toLowerCase().includes(query)) : s.people}
+            {@const chosen = shown.filter((p) => picked.includes(String(p.Id))).length}
             {#if shown.length}
               <details open={query.length > 1}>
-                <summary>{s.label} <span class="muted">{shown.length}</span></summary>
+                <summary>{s.label} <span class="muted">{chosen} z {shown.length}</span></summary>
                 {#each shown as p (p.Id)}
                   <label class="check">
                     <input type="checkbox" checked={picked.includes(String(p.Id))} onchange={(e) => toggle(String(p.Id), e.currentTarget.checked)} />
@@ -113,12 +137,14 @@
   {/if}
   <label>
     Temat
-    <input name="subject" autocomplete="off" enterkeyhint="next" required bind:value={subject} />
+    <input name="subject" autocomplete="off" enterkeyhint="next" required bind:value={subject} onkeydown={enter(() => bodyField.focus())} />
   </label>
   <label>
     Treść
-    <textarea name="body" required rows="8" bind:value={body}></textarea>
+    <textarea name="body" required rows="8" bind:value={body} bind:this={bodyField}></textarea>
   </label>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-  <button class="primary" disabled={busy}>{busy ? 'Wysyłanie…' : 'Wyślij'}</button>
+  <div class="dock">
+    <button class="primary send" disabled={busy}>{busy ? 'Wysyłanie…' : 'Wyślij'}</button>
+  </div>
 </form>

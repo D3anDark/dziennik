@@ -1,12 +1,18 @@
-import { api, inbox, refreshUnread as countByApi } from './api.svelte.js';
+import { api, post, inbox, refreshUnread as countByApi } from './api.svelte.js';
 import { plain } from './util.js';
 
 /**
  * Messages read from the Synergia website, for accounts the API refuses (no Mobilne Dodatki). The server passes
  * each page on as a string and it is parsed here in an inert document: nothing in it runs or loads.
+ * Writing fills in the site's own form (#formWiadomosci) and submits it through the server.
  * Selectors follow the site's markup as of November 2026.
  */
 const FOLDER = { in: 5, out: 6 };
+/** Limits the site's form checks before it submits: wyslij_wiadomosc(button, 150, 20000, ...). */
+const MAX_SUBJECT = 150;
+const MAX_BODY = 20000;
+// Every person of each recipient group read so far; the site's form submits the whole list next to the ticked ones.
+const listed = new Map();
 // shortcut: the count is read again at most this often, shorten it if the badge turns out to lag too much.
 const EVERY = 5 * 60 * 1000;
 // Students whose messages come from the website, and when their unread count was last read. Per page load.
@@ -79,6 +85,73 @@ export async function message(login, key) {
       Name: text(img.closest('tr')?.cells[0]),
     })),
   };
+}
+
+const submit = (login, path, fields) => post(`w/${encodeURIComponent(login)}/${path}`, fields);
+
+/** What a form of the module submits as it stands: its hidden fields, the site's request key among them. */
+function hidden(doc) {
+  const form = doc.querySelector('#formWiadomosci');
+  if (!form) throw new Error('upstream');
+  return [...form.elements].filter((el) => el.type === 'hidden' && el.name).map((el) => [el.name, el.value]);
+}
+
+/**
+ * Recipient groups in the shape Compose lists them: the groups the new-message form offers this account. Left out:
+ * parents and guardians as in the API version, "grupa" (it asks for a second choice this form does not have) and
+ * "sadmin" (Librus support, not the school). An id is "group/person": the site sends to one group at a time.
+ */
+export async function groups(login) {
+  const doc = await page(login, `wiadomosci/2/${FOLDER.in}`);
+  const kinds = [...doc.querySelectorAll('input[name="adresat"]')].flatMap((radio) => {
+    // onClick='selectRecipients("nauczyciel", false, 0 );'
+    const call = /selectRecipients\(\s*"(\w+)"\s*,\s*(\w+)\s*,\s*(\d+)/.exec(radio.getAttribute('onclick') ?? '');
+    if (!call || /rodzic|opiekun|^grupa$|^sadmin$/.test(call[1])) return [];
+    return [{ kind: call[1], virtual: call[2], group: call[3], label: text(doc.querySelector(`label[for="${radio.id}"]`)) || call[1] }];
+  });
+  const sections = await Promise.all(
+    kinds.map(async ({ kind, virtual, group, label }) => {
+      const fields = [['typAdresata', kind], ['poprzednia', String(FOLDER.in)], ['tabZaznaczonych', ''], ['czyWirtualneKlasy', virtual], ['idGrupy', group]];
+      const html = await submit(login, 'getRecipients', fields).then((r) => r.html, () => '');
+      const boxes = [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('input[name="DoKogo[]"]')];
+      listed.set(kind, boxes.map((box) => box.value));
+      return { label, people: boxes.map((box) => ({ Id: `${kind}/${box.value}`, Label: text(box.closest('tr')?.querySelector('label')) })) };
+    }),
+  );
+  return sections.filter((s) => s.people.length);
+}
+
+/**
+ * Sends a new message to `receivers` (ids from `groups`) or answers the received message `originalMessageId`, and
+ * returns the list id of the sent message. The site's answer to the form is not read: a message counts as sent when
+ * it turns up in the sent folder, which also holds when the answer got lost on the way.
+ */
+export async function send(login, { subject, body, receivers, originalMessageId }) {
+  if (subject.length > MAX_SUBJECT) throw new Error('subject_long');
+  if (body.length > MAX_BODY) throw new Error('body_long');
+  const kinds = new Set((receivers ?? []).map((r) => r.split('/')[0]));
+  if (kinds.size > 1) throw new Error('one_group');
+  const before = new Set((await folder(login, 'out')).map((m) => m.id));
+  // The form is read right before it is submitted: its request key belongs to the session open at that moment.
+  let path = `wiadomosci/${FOLDER.in}`;
+  let fields;
+  if (originalMessageId) {
+    path = 'wiadomosci';
+    fields = hidden(await page(login, `wiadomosci/3/${FOLDER.in}/${originalMessageId.split('-')[1]}`));
+  } else {
+    const [kind] = kinds;
+    fields = [
+      ...hidden(await page(login, `wiadomosci/2/${FOLDER.in}`)),
+      ['adresat', kind],
+      ...receivers.map((r) => ['DoKogo[]', r.split('/')[1]]),
+      ...(listed.get(kind) ?? []).map((id) => ['DoKogo_hid[]', id]),
+    ];
+  }
+  fields.push(['temat', subject], ['tresc', body], ['wyslij', 'Wyślij']);
+  const failed = await submit(login, path, fields).then(() => null, (e) => e);
+  const made = (await folder(login, 'out')).find((m) => !before.has(m.id));
+  if (!made) throw failed ?? new Error('unconfirmed');
+  return made.id;
 }
 
 /** Where the site hands out an attachment, in the shape of the API's answer: { DownloadUrl }. */

@@ -8,7 +8,11 @@
   --bg: #f2f4f7;
   --surface: #ffffff;
   --raised: #eceef1;
+  /* The picked segment of a switch: lifted off its track. */
+  --lifted: #ffffff;
   --line: #e1e4e9;
+  /* The edge of a field to type in: darker than a card's hairline, so an empty field reads as one. */
+  --field: #c3c8d0;
   --rule: #edeff2;
   --text: #0c0d0f;
   --muted: #5f6570;
@@ -20,14 +24,13 @@
   --danger-soft: #fdeceb;
   --ok: #1e6b3a;
   --ok-soft: #e4f3e9;
-  --banner: #fff6da;
   /* Grade colours: background / text pairs, each at least 4.5:1. */
-  --g6: #d7f2e2;
-  --g6-text: #0f5e34;
-  --g5: #e3f4ea;
+  --g6: #b4e3c4;
+  --g6-text: #0a4426;
+  --g5: #dcf2e2;
   --g5-text: #17663f;
-  --g4: #e3edfc;
-  --g4-text: #1f4c9a;
+  --g4: #e9f1cc;
+  --g4-text: #45570c;
   --g3: #fcf0d4;
   --g3-text: #7d5200;
   --g2: #fde5d6;
@@ -60,7 +63,9 @@
     --bg: #0d0e10;
     --surface: #151618;
     --raised: #202226;
+    --lifted: #3d4047;
     --line: #27292e;
+    --field: #40434a;
     --rule: #1e2024;
     --text: #ececee;
     --muted: #9a9ea6;
@@ -72,13 +77,12 @@
     --danger-soft: #3a1c1a;
     --ok: #8fd6aa;
     --ok-soft: #15301f;
-    --banner: #3a3214;
-    --g6: #12382a;
-    --g6-text: #8fe0b0;
+    --g6: #145230;
+    --g6-text: #b2f2c9;
     --g5: #163226;
     --g5-text: #9ad6b1;
-    --g4: #182a47;
-    --g4-text: #a3c3ff;
+    --g4: #2a3110;
+    --g4-text: #c9dc8c;
     --g3: #372c10;
     --g3-text: #f0cd78;
     --g2: #3b2415;
@@ -124,7 +128,6 @@ summary,
 .tabs a,
 .nav-row,
 .list a,
-.tiles a,
 .feed a,
 .back {
   user-select: none;
@@ -171,7 +174,7 @@ a {
 }
 
 small {
-  font-size: 0.85rem;
+  font-size: 0.875rem;
 }
 
 .icon {
@@ -195,12 +198,14 @@ input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--field);
   background-color: var(--surface);
   color: var(--text);
   padding: 0 var(--space-3);
   /* Below 16px iOS zooms the page when a field takes focus. */
   font-size: 16px;
+  /* What is typed reads as text, not as the label above it. */
+  font-weight: 400;
 }
 
 /* The native list of a select takes its colours from here, not from the page: without them a dark theme
@@ -239,11 +244,10 @@ button:active:not(:disabled),
 
 /* Hover only where there is a pointer that hovers: after a tap a touch screen leaves :hover stuck. */
 @media (hover: hover) and (pointer: fine) {
-  button:hover:not(:disabled, .primary, .nav-row, .chip),
+  button:hover:not(:disabled, .primary, .nav-row, .chip, [aria-pressed='true']),
   .button:hover:not(.primary),
   .icon-btn:hover,
-  .list a:hover,
-  .tiles a:hover {
+  .list a:hover {
     background-color: var(--raised);
   }
 
@@ -269,6 +273,20 @@ button:disabled {
   cursor: default;
 }
 
+/* An ink button that cannot act yet steps back to a plain one, not a grey slab that looks broken. */
+.primary:disabled {
+  border-color: var(--line);
+  background: var(--raised);
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* "Dziś" is a quiet word beside the period, always in its place; while today is in view it is only greyed. */
+.now {
+  border-color: transparent;
+  background: none;
+}
+
 :focus-visible {
   outline: 2px solid var(--mark);
   outline-offset: 2px;
@@ -280,10 +298,6 @@ button:disabled {
   color: var(--ink-text);
 }
 
-.secondary {
-  border-color: transparent;
-  background: var(--raised);
-}
 
 .link {
   min-height: var(--tap);
@@ -293,6 +307,18 @@ button:disabled {
   text-decoration: underline;
   text-decoration-color: var(--line);
   text-underline-offset: 4px;
+}
+
+/* An action on the whole list, at its right end, quieter than the list it acts on. */
+.mark-all {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: fit-content;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-decoration: none;
 }
 
 .icon-btn {
@@ -316,6 +342,10 @@ button:disabled {
 
 .wide {
   width: 100%;
+}
+
+input.search {
+  margin-bottom: var(--space-3);
 }
 
 .back {
@@ -349,11 +379,35 @@ label {
   padding: var(--space-5) var(--space-4);
 }
 
+/* Inside a panel a waiting or empty note is one line of it, on the panel's edge. */
+.card .center {
+  padding: 0;
+  text-align: left;
+}
+
 .error {
   color: var(--danger);
   background: var(--danger-soft);
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-3);
+}
+
+/* A failed load says why and, when trying again can help, offers it right there. */
+:is(.error, .note-line) > p {
+  margin: 0;
+}
+
+:is(.error, .note-line):has(> button) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.error > .link {
+  color: inherit;
+  font-weight: 600;
 }
 
 .toast {
@@ -371,10 +425,24 @@ label {
 }
 
 .banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  /* One height for a line of text and for a line with its button. */
+  min-height: 48px;
   margin: 0;
   padding: var(--space-2) var(--space-4);
-  background: var(--banner);
-  text-align: center;
+  border-bottom: 1px solid var(--line);
+  background: var(--raised);
+  font-size: 0.9rem;
+}
+
+/* The banner's action is a small button at its end, not a second bar. */
+.banner button {
+  min-height: 32px;
+  padding: 0 var(--space-3);
   font-size: 0.9rem;
 }
 
@@ -425,9 +493,14 @@ label {
   position: relative;
   display: flex;
   align-items: center;
+  /* As wide as the name, so its arrow follows it; the refresh button keeps the far end. */
+  flex: 0 1 auto;
+  margin-right: auto;
 }
 
 .picker select {
+  width: auto;
+  max-width: 100%;
   appearance: none;
   border: 0;
   background-color: var(--bg);
@@ -444,14 +517,15 @@ label {
   color: var(--muted);
 }
 
+/* Up to a tablet the content keeps the bar's edges; a wide screen sets its own width below. */
 main {
-  max-width: 720px;
   margin: 0 auto;
   padding: var(--space-5) max(var(--space-4), env(safe-area-inset-right))
     calc(var(--tabs-h) + var(--space-5) + env(safe-area-inset-bottom)) max(var(--space-4), env(safe-area-inset-left));
 }
 
-main:focus {
+main:focus,
+main h1:focus {
   outline: none;
 }
 
@@ -464,6 +538,25 @@ main:focus {
   border-top: 1px solid var(--line);
   background: var(--bg);
   padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* A tablet keeps the phone's layout in a column of its own, the bar and the tabs lined up with it. */
+@media (min-width: 600px) and (max-width: 899px) {
+  main {
+    max-width: 672px;
+  }
+
+  .bar {
+    padding-inline: calc((100% - 672px) / 2 + var(--space-4)) calc((100% - 672px) / 2 + var(--space-1));
+  }
+
+  .tabs {
+    padding-inline: calc((100% - 672px) / 2);
+  }
+
+  .banner {
+    padding-inline: calc((100% - 672px) / 2 + var(--space-4));
+  }
 }
 
 .tabs a:active .tab-icon {
@@ -532,7 +625,8 @@ main:focus {
 
 @media (min-width: 900px) {
   :root {
-    font-size: 14px;
+    /* Denser than a phone, yet the smallest meta (0.875rem) stays near 13px. */
+    font-size: 15px;
   }
 
   html {
@@ -556,14 +650,31 @@ main:focus {
     flex-direction: column;
     gap: var(--space-5);
     height: 100dvh;
-    padding: var(--space-5) var(--space-3) var(--space-4);
+    padding: var(--space-4) var(--space-3);
     border-right: 1px solid var(--line);
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
   }
 
+  /* The way back to the menu of a phone; the sidebar is that menu here. */
+  p:has(> .back[href='#/wiecej']) {
+    display: none;
+  }
+
+  /* Every page starts at the same edge. Lists, letters and forms keep a reading width; the dashboard and the
+     week, laid out in columns, take the whole page. */
   main {
-    max-width: 920px;
+    max-width: 1120px;
     padding: 36px 40px 64px;
+  }
+
+  main > * {
+    max-width: 760px;
+  }
+
+  main:has(.panels, .week) > * {
+    max-width: none;
   }
 }
 
@@ -578,11 +689,17 @@ main:focus {
   margin-top: auto;
 }
 
+/* Whose diary it is, set apart from the places in it. */
+.side .accounts {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
 .side .group {
   margin: var(--space-4) 0 var(--space-1);
   padding: 0 var(--space-3);
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.875rem;
 }
 
 /* One row of the sidebar: a place, an account, or an action. The active one is a neutral pill. */
@@ -603,9 +720,27 @@ main:focus {
   text-decoration: none;
 }
 
-@media (pointer: fine) {
+@media (min-width: 900px) {
+  .nav-row {
+    min-height: 36px;
+  }
+}
+
+/* A laptop screen (1280×800 and shorter): the whole sidebar still fits without a scroll of its own. Before the
+   touch rule below, which keeps 44px rows for a finger. */
+@media (min-width: 900px) and (max-height: 860px) {
+  .side {
+    gap: var(--space-3);
+  }
+
   .nav-row {
     min-height: 32px;
+  }
+}
+
+@media (pointer: coarse) {
+  .nav-row {
+    min-height: 44px;
   }
 }
 
@@ -616,22 +751,60 @@ main:focus {
   font-weight: 500;
 }
 
+/* The product's name, with the refresh that every view shares. */
+.brandbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: var(--space-3);
+}
+
+.wordmark {
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+/* The student whose data is shown: an ink avatar, not a second "you are here" pill next to the view's. */
 .account {
   min-height: 44px;
-  color: var(--text);
+}
+
+.account[aria-pressed='true'] {
+  background: transparent;
+  font-weight: 600;
+}
+
+.account[aria-pressed='true'] .avatar {
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .account[aria-pressed='false']:hover {
+    background: var(--raised);
+  }
 }
 
 .account small {
   display: block;
+  font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.side-foot small {
-  padding: var(--space-2) var(--space-3) 0;
+.me {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: var(--space-3);
+}
+
+.me small {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Page structure */
@@ -648,28 +821,37 @@ main:focus {
 .greeting h1 {
   margin: 0;
   font-size: 1.6rem;
-  font-weight: 400;
 }
 
 .greeting p {
   margin: 2px 0 0;
 }
 
-.section,
-.month {
+.lucky strong {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.head + section > .section:first-child {
+  margin-top: 0;
+}
+
+.section {
   margin: var(--space-5) 0 var(--space-2);
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 500;
 }
 
-.month {
-  font-size: 1rem;
-  color: var(--text);
+/* Inside a panel a day label starts a group, not a new part of the page. */
+.card .section {
+  margin-top: var(--space-3);
 }
 
-.month::first-letter {
-  text-transform: uppercase;
+/* In a panel a rule goes between the entries of one day, like the calendar; a gap, not a rule, between days. */
+.day-group + .day-group {
+  margin-top: var(--space-4);
 }
 
 /* Surfaces: flat, one hairline, no shadow at rest */
@@ -682,9 +864,20 @@ main:focus {
   margin: 0 0 var(--space-3);
 }
 
-/* Today, and what is due: a bar in the one hue instead of a tinted card. */
-.card.today {
-  box-shadow: inset 3px 0 0 var(--mark);
+.card > :last-child {
+  margin-bottom: 0;
+}
+
+/* A day over the entries of its card: a label, quieter than what it holds. */
+.card > h2.day {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Today's day in the plan: its heading in the one hue, like today's date in the day strip. */
+section.card.today > h2 {
+  color: var(--mark);
 }
 
 .card > h2:first-child {
@@ -711,7 +904,6 @@ main:focus {
 }
 
 .list a:active,
-.tiles a:active,
 .feed a:active {
   background-color: var(--raised);
 }
@@ -726,10 +918,14 @@ main:focus {
 /* A panel is a card with a title row: the title, and one link out on the right. */
 .head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
-  min-height: var(--tap);
+  margin-bottom: var(--space-2);
+}
+
+.card > .head:first-child {
+  margin-top: 2px;
 }
 
 .head h2,
@@ -738,20 +934,40 @@ main:focus {
   margin: 0;
 }
 
-/* A small link, a full-height target. */
+/* A card's title a step above the titles of its rows (15px, 500). */
+.head h2 {
+  font-size: 1.0625rem;
+}
+
+/* A small link with a full-size target that reaches past its line, so a card with one keeps the header of a card
+   without. */
 .head a {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  min-height: var(--tap);
+  gap: 2px;
   color: var(--muted);
   font-size: 0.9rem;
+  text-decoration: none;
   white-space: nowrap;
 }
 
-/* Cards that share a row share a bottom edge. */
-.panels {
+.head a::after {
+  content: '';
+  position: absolute;
+  inset: calc((1lh - var(--tap)) / 2) -8px;
+}
+
+/* On a phone the panels are one list; wide, two columns of panels, each panel as tall as its content. */
+.panels,
+.panels > .col {
   display: grid;
   gap: var(--space-3);
+  align-content: start;
+}
+
+.panels > .col {
+  display: contents;
 }
 
 .panels .card {
@@ -761,60 +977,42 @@ main:focus {
 @media (min-width: 1100px) {
   .panels {
     grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+
+  .panels > .col {
+    display: grid;
   }
 }
 
-/* Count tiles: a label, a figure at regular weight, a plain caption */
-
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-3);
-  list-style: none;
-  margin: 0 0 var(--space-3);
-  padding: 0;
+/* What is new, under the greeting: a line of links, the count of what is unread or new in blue. */
+.greeting .news {
+  margin-top: var(--space-2);
 }
 
-@media (min-width: 900px) {
-  .tiles {
-    grid-template-columns: repeat(4, 1fr);
-  }
+.news a {
+  text-decoration-color: var(--line);
+  text-underline-offset: 4px;
 }
 
-.tiles a {
-  display: grid;
-  align-content: start;
-  gap: 2px;
-  height: 100%;
-  min-height: 104px;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  text-decoration: none;
-}
-
-.tiles span {
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.tiles strong {
-  font-size: 1.9rem;
-  font-weight: 400;
-  line-height: 1.2;
+.news strong {
   font-variant-numeric: tabular-nums;
 }
 
-.tiles strong.none {
-  color: var(--muted);
+.news strong.new,
+.list-head .new {
+  color: var(--mark);
 }
 
-.tiles small {
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Over a list: its count at the left, the action on all of it at the right. */
+.list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-3);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Login */
@@ -836,14 +1034,40 @@ main:focus {
   margin: 0;
 }
 
-.brand {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius);
-  background: var(--ink);
-  color: var(--ink-text);
+.login .byline {
+  font-size: 0.9rem;
+  text-wrap: pretty;
+}
+
+/* The password field with its show button inside the right edge. */
+.reveal {
+  position: relative;
+  display: block;
+}
+
+.reveal input {
+  padding-right: var(--tap);
+}
+
+.reveal .icon-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+}
+
+.reveal [aria-pressed='true'] {
+  color: var(--text);
+}
+
+/* A phone gives the form the whole screen: no card round it. */
+@media (max-width: 479px) {
+  .login.card {
+    margin-top: 10vh;
+    padding: var(--space-4);
+    border: 0;
+    background: none;
+  }
 }
 
 /* A page turned by a horizontal swipe (swipe.js): the browser keeps vertical scrolling and pinch zoom. */
@@ -865,20 +1089,93 @@ main:focus {
   flex: 1;
 }
 
-.weeknav,
+@media (min-width: 600px) {
+  .toolbar .segmented {
+    flex: 0 1 20rem;
+  }
+
+  .toolbar > :last-child:not(:first-child) {
+    margin-left: auto;
+  }
+}
+
+/* The plan's week side by side on a wide screen, one column a day. */
+@media (min-width: 900px) {
+  .week {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: var(--space-2);
+  }
+
+  .week > .card {
+    margin: 0;
+    padding: var(--space-3);
+  }
+
+  .week h2 .sep {
+    display: none;
+  }
+
+  .week h2 .dot {
+    display: inline-block;
+    margin: 0 0 1px var(--space-2);
+    vertical-align: middle;
+  }
+
+  /* Lesson rows shared across the days (rows set by Timetable): a lesson lines up with the same lesson next door. */
+  @supports (grid-template-rows: subgrid) {
+    .week {
+      row-gap: 0;
+    }
+
+    .week > .card {
+      display: grid;
+      grid-row: span var(--rows);
+      grid-template-rows: subgrid;
+      row-gap: 0;
+    }
+
+    .week > .card > .lessons {
+      display: grid;
+      grid-row: 2 / -1;
+      grid-template-rows: subgrid;
+      row-gap: 0;
+    }
+
+    .week .lessons > li {
+      grid-row: var(--row);
+      align-content: start;
+    }
+  }
+
+  .week h2 .date {
+    display: block;
+  }
+
+  /* A narrow column: the time, the subject, its marks on a line of their own, the rest, the same in every column. */
+  .week .lessons li {
+    grid-template-columns: 1.2em minmax(0, 1fr);
+    column-gap: var(--space-1);
+    row-gap: 0;
+  }
+
+  .week .lessons .subject {
+    grid-column: 2;
+  }
+
+  .week .lessons .name,
+  .week .lessons .marks {
+    display: block;
+  }
+
+  .week .lessons .marks > :first-child {
+    margin-left: 0;
+  }
+}
+
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.weeknav button {
-  padding: 0 var(--space-2);
-  font-size: 0.9rem;
-}
-
-.segmented {
   grid-template-columns: repeat(2, 1fr);
   gap: 2px;
   margin: 0;
@@ -895,9 +1192,139 @@ main:focus {
 }
 
 .segmented [aria-pressed='true'] {
-  background: var(--surface);
+  background: var(--lifted);
   color: var(--text);
 }
+
+/* Plan: a week between two arrows, shown as days to pick or as its dates */
+
+.pager {
+  display: grid;
+  grid-template-columns: var(--tap) 1fr var(--tap);
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+/* A month or a week by name: the arrows together at the left edge, the name after them, "Dziś" at the far end.
+   The first arrow's icon, not its tap area, lines up with the page. */
+.pager:has(> .range) {
+  display: flex;
+}
+
+.pager:has(> .range) > :first-child {
+  margin-left: -10px;
+}
+
+.pager > .range {
+  order: 1;
+  margin-left: var(--space-1);
+}
+
+.pager > .now {
+  order: 2;
+  margin-left: auto;
+  /* Its word, not its tap area, ends at the page's right edge, as the first arrow starts at the left. */
+  margin-right: calc(-1 * var(--space-3));
+  padding-inline: var(--space-3);
+}
+
+.range {
+  margin: 0;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.range::first-letter {
+  text-transform: uppercase;
+}
+
+.days {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.pager:has(+ .days) {
+  margin-bottom: var(--space-1);
+}
+
+/* What the dot under a day means, said once under the strip. */
+.legend,
+.legend > span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.legend {
+  column-gap: var(--space-4);
+  margin: calc(-1 * var(--space-2)) 0 var(--space-3);
+  font-size: 0.875rem;
+}
+
+.days button {
+  flex-direction: column;
+  gap: 2px;
+  min-height: 60px;
+  padding: var(--space-1) 0;
+  border-color: transparent;
+  border-radius: var(--radius);
+  background: transparent;
+}
+
+.days small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.days strong {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.days [aria-current='date'] strong {
+  color: var(--mark);
+}
+
+.days [aria-pressed='true'] {
+  background: var(--raised);
+}
+
+/* A day with a cancelled or substituted lesson; the button's label says it in words. */
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.dot.on {
+  /* A change is a ring, a cancellation (below) a filled red dot: told apart by shape, not by colour alone. */
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text);
+}
+
+/* What the dot on a grade means, said above the sheet while there is one. */
+.fresh-key {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: 0.875rem;
+}
+
+.dot.new {
+  background: var(--mark);
+}
+
+.dot.on.alert {
+  background: var(--danger);
+  box-shadow: none;
+}
+
 
 /* Grades: one sheet, a subject per row, its average at the right edge */
 
@@ -925,17 +1352,56 @@ main:focus {
   white-space: nowrap;
 }
 
+/* Wide, the sheet is a table: the subject, its grades, its average at the right edge, as on a phone. */
+@media (min-width: 900px) {
+  .sheet > section {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr) auto;
+    column-gap: var(--space-4);
+    align-items: start;
+  }
+
+  .sheet .head {
+    display: contents;
+  }
+
+  /* On the line of the first chips' figures. */
+  .sheet .head > * {
+    padding-top: 7px;
+  }
+
+  .sheet .head h2 {
+    grid-column: 1;
+  }
+
+  .sheet .head > span {
+    grid-column: 3;
+    /* The smaller figures on the subject's line. */
+    padding-top: 9px;
+    max-width: 14rem;
+    text-align: right;
+    white-space: normal;
+  }
+
+  /* All the grade lines in one cell, so a subject name over three lines does not push an opened grade down. */
+  .sheet .lines {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
 .row {
   display: flex;
   gap: var(--space-3);
-  align-items: flex-start;
+  /* The label sits on the line of the first chips' figures, whatever height the chips have on this screen. */
+  align-items: baseline;
   margin-bottom: var(--space-2);
 }
 
 .label {
-  flex: 0 0 4.2em;
-  padding-top: 8px;
-  font-size: 0.85rem;
+  /* Wide enough for "Proponowana" on one line; a two-word kind wraps under it. */
+  flex: 0 0 6.5em;
+  font-size: 0.875rem;
 }
 
 .chips {
@@ -966,14 +1432,142 @@ main:focus {
   min-height: 28px;
 }
 
-.chip[aria-expanded='true'] {
-  box-shadow: inset 0 0 0 2px currentColor;
+/* The open grade: a bar under it, as under a tab, toward its detail. An outline would read as a final grade. */
+.chip[aria-expanded='true']::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -5px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ink);
+}
+
+button.chip {
+  position: relative;
+}
+
+.chip abbr {
+  text-decoration: none;
+}
+
+/* Added in the last 7 days: a dot in the corner, and "nowa" in the button's name. */
+.chip.fresh {
+  position: relative;
+}
+
+.chip.fresh::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--mark);
+}
+
+.head h2 small {
+  display: inline;
+  margin-left: var(--space-2);
+  font-weight: 400;
+}
+
+/* Attendance: the kinds of entry as a filter above the list, one segment each; each kind's mark next to its name. */
+/* A school's own long kind names wrap to a second row rather than run off the card. */
+.segmented.filter {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+
+.segmented.filter button {
+  flex: 1 0 auto;
+}
+
+.segmented.filter button {
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+}
+
+@media (min-width: 600px) {
+  .segmented.filter {
+    width: fit-content;
+  }
+
+  .segmented.filter button {
+    min-width: 5rem;
+  }
+}
+
+.segmented.filter .wide {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .segmented.filter .narrow {
+    display: none;
+  }
+
+  .segmented.filter .wide {
+    display: inline;
+  }
+}
+
+.totals .kind {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* "u", "nb", "sp" in one width, so the names beside them start in one column. */
+.totals .kind .chip,
+.entries .chip.static {
+  min-width: 2.5em;
+}
+
+/* The one figure the attendance screen is for, above the counts behind it. */
+.figure {
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+}
+
+.figure strong {
+  color: var(--text);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.totals .muted {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+.totals .pct {
+  min-width: 3.4em;
+}
+
+.totals .alert {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* A final grade on the Oceny page: the size of the grade buttons beside it, by touch too (the rule below). */
+.final .chip {
+  min-width: 36px;
+  min-height: 36px;
 }
 
 @media (pointer: coarse) {
-  button.chip {
-    min-width: 44px;
-    min-height: 44px;
+  button.chip,
+  .final .chip {
+    min-width: 40px;
+    min-height: 40px;
   }
 }
 
@@ -984,8 +1578,9 @@ main:focus {
 .g2 { background: var(--g2); color: var(--g2-text); }
 .g1 { background: var(--g1); color: var(--g1-text); }
 
+/* Under the chips, not under the label: the label column is 6.5em of 0.875rem. */
 .detail {
-  margin: 0 0 var(--space-3) calc(4.2em + var(--space-3));
+  margin: 0 0 var(--space-3) calc(6.5 * 0.875rem + var(--space-3));
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -993,13 +1588,42 @@ main:focus {
   color: var(--muted);
 }
 
-.final {
-  margin: var(--space-2) 0 0;
-  font-variant-numeric: tabular-nums;
+.detail .what {
+  color: var(--text);
 }
 
-.final + .final {
-  margin-top: var(--space-1);
+.row.final {
+  margin-top: 0;
+}
+
+/* A final grade in full colour, wherever it is listed: what the term came to, apart from the grades on the way. */
+.chip.final.g6 { background: var(--g6-text); color: var(--surface); }
+.chip.final.g5 { background: var(--g5-text); color: var(--surface); }
+.chip.final.g4 { background: var(--g4-text); color: var(--surface); }
+.chip.final.g3 { background: var(--g3-text); color: var(--surface); }
+.chip.final.g2 { background: var(--g2-text); color: var(--surface); }
+.chip.final.g1 { background: var(--g1-text); color: var(--surface); }
+/* Off the scale ("zw", "zaliczono") a final grade stays grey, marked final by an outline. */
+.chip.final:not(.g1, .g2, .g3, .g4, .g5, .g6) { box-shadow: inset 0 0 0 1.5px var(--field); }
+
+/* Recent grades: the grades in one column, however long the longest. */
+.entries.recent {
+  display: grid;
+  /* One width for the chips of the usual grades ("5/20" included), so the subjects start at one edge. */
+  grid-template-columns: minmax(3rem, max-content) minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+}
+
+.entries.recent > li {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  /* Containment would cut the row off the list's columns; this list is short anyway. */
+  content-visibility: visible;
+}
+
+.entries.recent .chip {
+  justify-self: start;
 }
 
 /* Lists inside cards */
@@ -1011,12 +1635,19 @@ main:focus {
   padding: 0;
 }
 
+/* On a phone the end of a lesson sits under its start, so the subject starts nearer the left edge. */
 .lessons li {
   display: grid;
-  grid-template-columns: 1.2em 6.3em 1fr;
+  grid-template-columns: 1.2em 3.3em 1fr;
   gap: var(--space-2);
   padding: var(--space-2) 0;
   border-top: 1px solid var(--rule);
+}
+
+@media (min-width: 600px) {
+  .lessons li {
+    grid-template-columns: 1.2em 6.3em 1fr;
+  }
 }
 
 .lessons li:first-child {
@@ -1029,9 +1660,34 @@ main:focus {
 }
 
 .lessons .time {
+  display: grid;
+  align-content: start;
   font-size: 0.9rem;
   padding-top: 1px;
   font-variant-numeric: tabular-nums;
+}
+
+/* Heard by a screen reader, not shown. Stacked, the end under the start needs no dash; a screen reader still hears the range. */
+.vh,
+.lessons .dash {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+@media (min-width: 600px) {
+  .lessons .time {
+    display: block;
+  }
+
+  .lessons .dash {
+    position: static;
+    width: auto;
+    height: auto;
+    clip-path: none;
+  }
 }
 
 .lessons .subject {
@@ -1054,14 +1710,23 @@ summary small,
 }
 
 .canceled .subject {
-  text-decoration: line-through;
   color: var(--muted);
 }
 
-/* inline-block, like .tag, keeps the canceled line-through off the note */
+/* The subject struck out says it all; the teacher and room under it stay readable. */
+.canceled .name {
+  text-decoration: line-through;
+}
+
+/* inline-block, like .tag, keeps the canceled line-through off the note; each part of the change on its line */
 .lessons .change {
   display: inline-block;
   width: 100%;
+  color: var(--muted);
+  white-space: pre-line;
+}
+
+.lessons .change.note {
   color: var(--text);
 }
 
@@ -1082,9 +1747,16 @@ summary small,
   vertical-align: middle;
 }
 
-.tag.ok {
-  background: var(--ok-soft);
-  color: var(--ok);
+/* A state already settled ("wykonane", "pozytywna"): quieter than the title it follows. */
+.tag.plain {
+  background: var(--raised);
+  color: var(--muted);
+}
+
+/* A change to note, not a problem: red stays with what was called off or is overdue. */
+.tag.notice {
+  background: var(--raised);
+  color: var(--text);
 }
 
 .tag.now {
@@ -1101,7 +1773,14 @@ summary small,
 }
 
 .events strong {
+  /* A step under the card's title, like a lesson's subject. */
   font-weight: 500;
+}
+
+/* What an entry is about, under its title and its when: body text a step below the title. */
+.events .rich {
+  margin-top: 2px;
+  font-size: 0.9rem;
 }
 
 .totals li,
@@ -1138,7 +1817,7 @@ summary small,
 .entries > li > .muted {
   margin-left: auto;
   text-align: right;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
 }
 
 .totals .muted {
@@ -1163,19 +1842,34 @@ summary small,
 .feed .chip,
 .feed .tile {
   width: 32px;
+  height: 32px;
+  place-items: center;
+}
+
+/* Every entry leads with one square: a grade's own chip, or the icon of its page on a neutral one. */
+.feed .tile {
+  border-radius: var(--radius-sm);
+  background: var(--raised);
 }
 
 .feed time,
 .messages time {
   flex: none;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
 }
 
-/* Expandable cards (homework, notices) */
+/* A flat list in one card (homework, notices, notes): a hairline between its items, as in messages. */
+.stack > * + * {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--rule);
+}
 
-details.card summary {
+/* Expandable rows (homework, notices) */
+
+.stack > details summary {
   display: block;
   position: relative;
   min-height: var(--tap);
@@ -1184,16 +1878,16 @@ details.card summary {
   list-style: none;
 }
 
-details.card summary strong {
+.stack > details summary strong {
   font-weight: 500;
 }
 
-details.card summary::-webkit-details-marker,
+.stack > details summary::-webkit-details-marker,
 .receivers summary::-webkit-details-marker {
   display: none;
 }
 
-details.card summary::after {
+.stack > details summary::after {
   content: '';
   position: absolute;
   top: 14px;
@@ -1206,25 +1900,32 @@ details.card summary::after {
   transition: transform 150ms var(--ease);
 }
 
-details.card[open] summary::after {
+.stack > details[open] summary::after {
   transform: rotate(-135deg);
 }
 
-details.card > :last-child {
+.stack > details > :last-child {
   margin-bottom: var(--space-2);
 }
 
-/* The one dot that says "not read yet". */
-details.unread summary strong::before,
-.messages .unread .who::before {
+/* The one dot that says "not read yet": after a homework's title and after a message's sender, inside the text. */
+details.unread summary strong::after,
+.messages .unread .who::after {
   content: '';
   display: inline-block;
   width: 6px;
   height: 6px;
-  margin-right: var(--space-2);
   border-radius: 50%;
   background: var(--mark);
   vertical-align: middle;
+}
+
+details.unread summary strong::after {
+  margin-left: 6px;
+}
+
+.messages .unread .who::after {
+  flex: none;
 }
 
 details.done summary > strong {
@@ -1232,6 +1933,7 @@ details.done summary > strong {
 }
 
 .rich {
+  max-width: 72ch;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   margin: var(--space-2) 0 0;
@@ -1239,16 +1941,9 @@ details.done summary > strong {
 }
 
 .rich a {
-  color: var(--mark);
+  text-underline-offset: 3px;
 }
 
-.note.negatywna {
-  box-shadow: inset 3px 0 0 var(--danger);
-}
-
-.note.pozytywna {
-  box-shadow: inset 3px 0 0 var(--ok);
-}
 
 /* Messages: who and when on the first line, the subject under it */
 
@@ -1257,7 +1952,7 @@ details.done summary > strong {
   min-height: 60px;
 }
 
-.messages .who,
+.messages .who > span,
 .messages .subject {
   display: block;
   overflow: hidden;
@@ -1265,16 +1960,20 @@ details.done summary > strong {
   white-space: nowrap;
 }
 
+/* The sender cut short when long, the unread dot after it still in view. */
+.messages .who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .messages .unread .who {
   font-weight: 600;
 }
 
 .messages .subject {
-  color: var(--muted);
-}
-
-.messages .unread .subject {
-  color: var(--text);
+  font-size: 0.9rem;
 }
 
 .message .meta {
@@ -1288,9 +1987,24 @@ details.done summary > strong {
 }
 
 .message .rich {
+  /* The letter's card already sets the measure; the rule above the text spans the card. */
+  max-width: none;
   margin-top: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid var(--rule);
+}
+
+/* Who and when, under a title: one size everywhere. */
+.byline {
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+/* A count beside a heading: a figure about the list, quieter than its name. */
+h2 .count {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 .note-line {
@@ -1300,8 +2014,49 @@ details.done summary > strong {
   font-size: 0.9rem;
 }
 
+/* A note's date and author close under its title, the text after them, as on the other lists. */
+article.note > h2 {
+  margin-bottom: 2px;
+}
+
+/* Notes have no summary padding, so they get the room homework rows have from theirs. */
+.stack > article.note + article.note {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+article.note > .rich {
+  margin-top: 0;
+}
+
+/* A note of more than one line keeps its icon by the first. */
+.note-line > svg:first-child {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 0.15em;
+}
+
 .files {
   margin-top: var(--space-2);
+}
+
+/* In a list an error is red text, and a button that does not fit beside it goes under it. */
+.entries small.error {
+  padding: 0;
+  background: none;
+}
+
+.access li:has(> button) {
+  flex-wrap: wrap;
+}
+
+.access li:has(> button) .grow {
+  flex-basis: 14rem;
+}
+
+/* The remove icon, not its tap area, ends at the list's right edge, like the dates and chevrons elsewhere. */
+.access li > .icon-btn {
+  margin-right: -10px;
 }
 
 .files .link,
@@ -1314,6 +2069,66 @@ details.done summary > strong {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-4);
+}
+
+/* A button in a card is as wide as its words. On a phone a form's own submit spans it, as the send bar and the login's do. */
+.compose > button {
+  justify-self: start;
+}
+
+@media (max-width: 599px) {
+  form.compose > button {
+    justify-self: stretch;
+  }
+}
+
+/* Writing a message on a phone: no tabs under the send bar, more of the text in view. */
+.writing {
+  --tabs-h: 0px;
+}
+
+.writing .tabs {
+  display: none;
+}
+
+/*
+ * The one action of a long page (send, reply) stays in reach: above the tabs, and above the keyboard while typing.
+ * The bar and its halo in the colour behind it keep text from showing round the button.
+ */
+.dock {
+  position: sticky;
+  bottom: calc(var(--tabs-h) + env(safe-area-inset-bottom) + var(--space-3));
+  display: grid;
+  background: var(--dock-bg, var(--bg));
+  box-shadow: 0 0 0 var(--space-3) var(--dock-bg, var(--bg));
+}
+
+/* In a form the bar is the card's foot: a hairline over it and the card's colour behind it, at rest and stuck. */
+.compose .dock {
+  bottom: calc(var(--tabs-h) + env(safe-area-inset-bottom));
+  margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--rule);
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+@media (min-width: 900px) {
+  .dock {
+    bottom: var(--space-4);
+  }
+
+  .compose .dock {
+    bottom: 0;
+  }
+
+  /* A full-width send bar on a wide screen is a banner, not a button. */
+  .dock > * {
+    justify-self: start;
+    width: auto;
+    min-width: 160px;
+  }
 }
 
 .compose h2,
@@ -1335,9 +2150,13 @@ details.done summary > strong {
   font-weight: 500;
 }
 
+/* Groups of people are rows of the form, not fields: hairlines between them, no box. */
 .receivers details {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border-top: 1px solid var(--rule);
+}
+
+.receivers details:last-of-type {
+  border-bottom: 1px solid var(--rule);
 }
 
 .receivers summary {
@@ -1346,9 +2165,10 @@ details.done summary > strong {
   align-items: center;
   gap: var(--space-3);
   min-height: var(--tap);
-  padding: 0 var(--space-3);
+  padding: 0;
   cursor: pointer;
-  font-weight: 500;
+  /* Regular weight: a group to open, not one more field like "Do" and "Temat". */
+  font-weight: 400;
 }
 
 .receivers summary .muted {
@@ -1376,16 +2196,16 @@ details.done summary > strong {
   align-items: center;
   gap: var(--space-3);
   min-height: var(--tap);
-  padding: 0 var(--space-3);
+  padding: 0;
   border-top: 1px solid var(--rule);
   font-weight: 400;
   cursor: pointer;
 }
 
 .check input {
-  width: 18px;
-  min-height: 18px;
-  height: 18px;
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
   margin: 0;
   accent-color: var(--ink);
 }

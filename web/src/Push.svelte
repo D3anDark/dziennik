@@ -1,6 +1,6 @@
 <script>
   import { api, session, message, resource } from './api.svelte.js';
-  import { fmtUnix } from './util.js';
+  import { fmtUnix, ago } from './util.js';
   import { supported, current, enable, disable } from './push.js';
   import Icon from './Icon.svelte';
 
@@ -8,6 +8,8 @@
   let on = $state(undefined);
   let busy = $state(false);
   let error = $state('');
+  /** "4 min temu", "2 godz. temu", "wczoraj", or the date. */
+  const since = (t) => ago(t).replace(/(min|godz\.)$/, '$1 temu');
   const blocked = $derived(supported && on !== undefined && Notification.permission === 'denied');
 
   current().then(
@@ -35,25 +37,28 @@
   }
 </script>
 
+<!-- The state and its switch first; what the notifications cover is the fine print under them. -->
 <section class="card compose">
-  <p>
-    Powiadomienia o nowych ocenach, nieobecnościach, uwagach, wiadomościach, ogłoszeniach oraz zmianach w planie i
-    terminarzu. Serwer pyta Librusa o nowości co 10 minut.
-  </p>
+  <h2>Na tym urządzeniu</h2>
   {#if !supported}
     <p class="muted">
       Ta przeglądarka nie obsługuje powiadomień. Na iPhonie i iPadzie dodaj najpierw aplikację do ekranu początkowego
       (Udostępnij, potem „Do ekranu początkowego”) i otwórz ją stamtąd.
     </p>
   {:else if blocked}
-    <p class="muted">Powiadomienia z tej strony są zablokowane w ustawieniach przeglądarki. Odblokuj je i wróć tutaj.</p>
+    <p class="note-line"><Icon name="bell-off" size={18} />Zablokowane w ustawieniach przeglądarki. Odblokuj powiadomienia dla tej strony i wróć tutaj.</p>
   {:else if on !== undefined}
-    {#if on}<p class="note-line"><Icon name="done" size={18} />Włączone na tym urządzeniu.</p>{/if}
+    {#if on}<p class="note-line"><Icon name="done" size={18} />Włączone.</p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <button class={on ? 'secondary' : 'primary'} disabled={busy} onclick={toggle}>
-      <Icon name="bell" size={20} />{on ? 'Wyłącz na tym urządzeniu' : 'Włącz powiadomienia'}
+      <Icon name={on ? 'bell-off' : 'bell'} size={20} />{on ? 'Wyłącz' : 'Włącz powiadomienia'}
     </button>
   {/if}
+  <p class="byline">
+    <!-- &nbsp; after one-letter words: Polish leaves none at a line's end. -->
+    Powiadomienia o nowych ocenach, nieobecnościach, uwagach, wiadomościach, ogłoszeniach oraz zmianach w&nbsp;planie
+    i&nbsp;terminarzu. Serwer pyta Librusa o&nbsp;nowości co 10 minut.
+  </p>
 </section>
 
 {#if on && students.length}
@@ -67,13 +72,17 @@
             <small class={s.feed?.error ? 'error' : 'muted'}>
               {#if !s.feed}
                 Czeka na pierwsze sprawdzenie.
+              {:else if s.feed.error === 'relogin'}
+                Sesja Librusa wygasła.
               {:else if s.feed.error}
                 {message(new Error(s.feed.error))}
               {:else}
-                Sprawdzono {fmtUnix(s.feed.checked)}.
+                Sprawdzono <time title={fmtUnix(s.feed.checked)}>{since(s.feed.checked)}</time>.
               {/if}
             </small>
           </span>
+          <!-- The server cannot sign in to Librus again by itself: that takes the password, on the sign-in form. -->
+          {#if s.feed?.error === 'relogin'}<button class="secondary" onclick={() => (session.me = null)}>Zaloguj ponownie</button>{/if}
         </li>
       {/each}
     </ul>

@@ -31,10 +31,15 @@
         // The field name is misspelled by Librus.
         files: x.HomeworkAssigmentFiles ?? [],
       }))
-      .sort((p, q) => (q.due ?? '').localeCompare(p.due ?? ''));
+      // What is still to do comes first, the nearest due date on top; then the rest, newest first, done last.
+      .sort((p, q) => rank(p) - rank(q) || (rank(p) ? (q.due ?? '').localeCompare(p.due ?? '') : (p.due ?? '').localeCompare(q.due ?? '')));
   }
 
-  const list = resource(() => load(login));
+  function rank(h) {
+    return h.done ? 2 : (h.due ?? '') >= t ? 0 : 1;
+  }
+
+  const list = resource(() => load(login), () => `homework/${login}`);
   let busy = $state(null);
   let error = $state({ id: null, text: '' });
 
@@ -61,25 +66,30 @@
 
 <Async r={list} empty="Brak zadań domowych.">
   {#snippet children(items)}
-    {#each items as h (h.id)}
-      <details class="card" class:today={h.due >= t} class:unread={!h.read} class:done={h.done} ontoggle={(e) => opened(h, e)}>
-        <summary>
-          <strong>{h.topic}</strong>
-          {#if h.done}<span class="tag ok"><Icon name="done" size={16} />wykonane</span>{/if}
-          <small class="muted">
-            {[h.subject, h.due && `termin ${fmtDate(h.due)}`].filter(Boolean).join(', ')}
-          </small>
-        </summary>
-        <p class="muted">Zadane {fmtDate(h.given)}{#if h.teacher}, {h.teacher}{/if}</p>
-        {#if h.text}<Rich text={h.text} />{/if}
-        {#if h.files.length}<Files link={(f) => synergia(login, `HomeWorkAssignments/Attachment/${h.id}-${f.Id}`)} files={h.files} />{/if}
-        {#if !h.done}
-          <button class="secondary" disabled={busy === h.id} onclick={() => markDone(h)}>
-            <Icon name="done" size={20} />{busy === h.id ? 'Zapisywanie…' : 'Oznacz jako wykonane'}
-          </button>
-        {/if}
-        {#if error.id === h.id}<p class="error" role="alert">{error.text}</p>{/if}
-      </details>
-    {/each}
+    <div class="card stack">
+      {#each items as h (h.id)}
+        <details class:unread={!h.read} class:done={h.done} ontoggle={(e) => opened(h, e)}>
+          <summary>
+            <strong>{h.topic}</strong>
+            {#if h.done}<span class="tag plain">wykonane</span>{:else if h.due && h.due < t}<span class="tag">po terminie</span>{/if}
+            <small class="muted">
+              <!-- Each part kept whole, and a wrapped line starts with its "·", none left hanging at an end. -->
+              {[h.subject, h.due && `termin ${fmtDate(h.due)}`, h.given && `zadane ${fmtDate(h.given)}`, h.teacher]
+                .filter(Boolean)
+                .map((p) => p.replaceAll(' ', '\u00a0'))
+                .join(' ·\u00a0')}
+            </small>
+          </summary>
+          {#if h.text}<Rich text={h.text} />{/if}
+          {#if h.files.length}<Files link={(f) => synergia(login, `HomeWorkAssignments/Attachment/${h.id}-${f.Id}`)} files={h.files} />{/if}
+          {#if !h.done}
+            <button class="secondary" disabled={busy === h.id} onclick={() => markDone(h)}>
+              <Icon name="done" size={20} />{busy === h.id ? 'Zapisywanie…' : 'Oznacz jako wykonane'}
+            </button>
+          {/if}
+          {#if error.id === h.id}<p class="error" role="alert">{error.text}</p>{/if}
+        </details>
+      {/each}
+    </div>
   {/snippet}
 </Async>

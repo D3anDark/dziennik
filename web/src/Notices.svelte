@@ -21,20 +21,22 @@
       .sort((p, q) => q.date.localeCompare(p.date));
   }
 
-  const list = resource(() => load(login));
+  const list = resource(() => load(login), () => `notices/${login}`);
 </script>
 
 <Async r={list} empty="Brak ogłoszeń.">
   {#snippet children(items)}
-    {#each items as n (n.id)}
-      <details class="card">
-        <summary>
-          <strong>{n.title}</strong>
-          <small class="muted">{[fmtDate(n.date), n.who].filter(Boolean).join(', ')}</small>
-        </summary>
-        <Rich text={n.text} />
-        {#if n.until}<p class="muted">Ważne do {fmtDate(n.until)}</p>{/if}
-      </details>
-    {/each}
+    <div class="card stack">
+      {#each items as n (n.id)}
+        <details>
+          <summary>
+            <strong>{n.title}</strong>
+            <small class="muted">{[fmtDate(n.date), n.who].filter(Boolean).join(' · ')}</small>
+          </summary>
+          <Rich text={n.text} />
+          {#if n.until}<p class="muted">Ważne do {fmtDate(n.until)}</p>{/if}
+        </details>
+      {/each}
+    </div>
   {/snippet}
 </Async>

@@ -182,6 +182,13 @@ impl Store {
              (SELECT sid_hash FROM sessions WHERE email = ?1 ORDER BY expires DESC LIMIT ?2)",
             params![email, MAX_SESSIONS_PER_USER],
         )?;
+        // Tokens nobody can use any more: every session ran out and there is no device left to notify. After the
+        // insert above, so that the user signing in right now is not among them.
+        db.execute(
+            "DELETE FROM users WHERE NOT EXISTS(SELECT 1 FROM sessions WHERE sessions.email = users.email)
+             AND NOT EXISTS(SELECT 1 FROM devices WHERE devices.email = users.email)",
+            [],
+        )?;
         Ok(sid)
     }
 
@@ -194,6 +201,16 @@ impl Store {
             )
             .optional()
             .ok()?
+    }
+
+    /// Starts the session's time again once half of it has passed. True when it did, for the caller to renew the
+    /// cookie as well: a device in use stays signed in, one left alone for the whole period does not.
+    pub fn renew_session(&self, sid: &str) -> rusqlite::Result<bool> {
+        let changed = self.conn().execute(
+            "UPDATE sessions SET expires = ?2 WHERE sid_hash = ?1 AND expires > ?3 AND expires < ?4",
+            params![sid_hash(sid), now() + SESSION_TTL_SECS, now(), now() + SESSION_TTL_SECS / 2],
+        )?;
+        Ok(changed > 0)
     }
 
     /// Drops the session; the user's Librus tokens go with their last session.
@@ -393,6 +410,27 @@ mod tests {
         }
         assert!(!s.allow("over@x.pl").unwrap());
         assert!(s.allow("u0@x.pl").unwrap());
+    }
+
+    #[test]
+    fn tokens_go_with_the_last_session() {
+        let s = Store::open(":memory:", &"ab".repeat(32)).expect("store");
+        let t = Tokens { access: "a".into(), refresh: "r".into(), accounts: vec![] };
+        for email in ["gone@x.pl", "phone@x.pl", "here@x.pl"] {
+            s.put_tokens(email, &t).unwrap();
+            s.new_session(email).unwrap();
+        }
+        s.add_device("phone@x.pl", &Subscription { endpoint: "https://push/1".into(), p256dh: vec![4; 65], auth: vec![1; 16] }).unwrap();
+        s.conn().execute("UPDATE sessions SET expires = 0 WHERE email != 'here@x.pl'", []).unwrap();
+
+        let sid = s.new_session("here@x.pl").unwrap();
+        assert!(!s.renew_session(&sid).unwrap(), "a fresh session is left alone");
+        s.conn().execute("UPDATE sessions SET expires = ?1 WHERE email = 'here@x.pl'", [now() + 60]).unwrap();
+        assert!(s.renew_session(&sid).unwrap() && !s.renew_session(&sid).unwrap(), "one about to run out starts again, once");
+        assert!(!s.renew_session("unknown").unwrap());
+        assert!(s.tokens("gone@x.pl").is_none(), "sessions ran out and no device: the tokens are not kept");
+        assert!(s.tokens("phone@x.pl").is_some(), "a device is still notified");
+        assert!(s.tokens("here@x.pl").is_some());
     }
 
     #[test]

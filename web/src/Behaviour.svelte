@@ -45,7 +45,7 @@
     return grades.length || points.length ? { grades, points, sum } : [];
   }
 
-  const data = resource(() => load(login));
+  const data = resource(() => load(login), () => `behaviour/${login}`);
 </script>
 
 <Async r={data} empty="Brak ocen z zachowania.">
@@ -67,7 +67,7 @@
           {#each d.points as x (x.id)}
             <li>
               <span class="chip static">{x.shown}</span>
-              <span>{x.category}<small class="muted">{[fmtDate(x.date), x.who, x.text].filter(Boolean).join(', ')}</small></span>
+              <span>{x.category}<small class="muted">{[fmtDate(x.date), x.who, x.text].filter(Boolean).join(' · ')}</small></span>
             </li>
           {/each}
         </ul>

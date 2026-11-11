@@ -1,16 +1,17 @@
 <script>
-  import { synergia, resource, inbox, session, clock } from './api.svelte.js';
-  import { today, mondayOf, shift, parse, fmtDay, fmtDate } from './util.js';
-  import { week, monthEvents, grades, upcomingDay } from './data.js';
+  import { synergia, resource, inbox, clock } from './api.svelte.js';
+  import { today, mondayOf, shift, fmtDay, fmtDate, plural } from './util.js';
+  import { week, monthEvents, grades, upcomingDay, unseenGrades } from './data.js';
   import Async from './Async.svelte';
+  import Icon from './Icon.svelte';
   import Lessons from './Lessons.svelte';
   import Events from './Events.svelte';
   import Activity from './Activity.svelte';
+  import Mark from './Mark.svelte';
 
   let { login } = $props();
   const t = today();
   const AHEAD = 14;
-  const student = $derived(session.me?.accounts.find((a) => a.login === login)?.name ?? '');
   const greeting = $derived((clock.tick, new Date().getHours() < 18 ? 'Dzień dobry' : 'Dobry wieczór'));
 
   /** Today until its last lesson ends, then the next day with lessons, looking into next week if need be. */
@@ -25,10 +26,13 @@
   const tomorrow = shift(t, 1);
   const dayName = (date) => (date === t ? 'Dziś' : date === tomorrow ? 'Jutro' : fmtDay(date));
 
+  /** When a grade was put in; a grade without that date counts from its own date. Sorted and shown by the same. */
+  const addedAt = (g) => g.added || g.date || '';
+
   /** The newest grades, and how many arrived in the last week. */
   async function recentGrades(login) {
-    const all = [...(await grades(login)).items].sort((a, b) => b.added.localeCompare(a.added));
-    return { list: all.slice(0, 8), week: all.filter((g) => g.added.slice(0, 10) > shift(t, -7)).length };
+    const all = [...(await grades(login)).items].sort((a, b) => addedAt(b).localeCompare(addedAt(a)));
+    return { list: all.slice(0, 8), week: unseenGrades(login, all).size };
   }
 
   async function upcoming(login) {
@@ -41,111 +45,101 @@
     return all.filter((e) => (e.to || e.date) >= t && e.date <= end);
   }
 
-  const day = resource(() => nextDay(login));
-  const recent = resource(() => recentGrades(login));
-  const events = resource(() => upcoming(login));
+  const day = resource(() => nextDay(login), () => `next-day/${login}/${t}`);
+  const recent = resource(() => recentGrades(login), () => `recent/${login}/${t}`);
+  const events = resource(() => upcoming(login), () => `upcoming/${login}/${t}`);
+  const news = $derived(
+    [
+      ['#/wiadomosci', inbox.unread, ['nowa wiadomość', 'nowe wiadomości', 'nowych wiadomości']],
+      ['#/oceny', recent.data?.week, ['nowa ocena', 'nowe oceny', 'nowych ocen']],
+    ]
+      .filter(([, n]) => n > 0)
+      .map(([href, n, words]) => [href, n, plural(n, words)]),
+  );
   // Optional: a school without lucky numbers answers with an error, and the line just leaves it out.
-  const lucky = resource(() => synergia(login, 'LuckyNumbers').then((r) => r.LuckyNumber?.LuckyNumber ?? null, () => null));
-
-  /** The lessons tile follows the same day as the panel: today's next lesson, or when the next school day starts. */
-  const lessons = $derived.by(() => {
-    const d = day.data;
-    if (d === undefined) return {};
-    if (!d) return { label: 'Najbliższe lekcje', count: 0, note: 'brak w planie' };
-    const on = d.lessons.filter((l) => !l.IsCanceled);
-    if (d.date === t) {
-      const next = on.find((l) => l.HourTo > new Date().toTimeString().slice(0, 5));
-      return { label: 'Lekcje dziś', count: on.length, note: `${next.HourFrom} ${next.Subject?.Name ?? ''}` };
-    }
-    const from = `od ${on[0].HourFrom}`;
-    if (d.date === tomorrow) return { label: 'Lekcje jutro', count: on.length, note: from };
-    return { label: 'Najbliższe lekcje', count: on.length, note: `${parse(d.date).toLocaleDateString('pl-PL', { weekday: 'long' })}, ${from}` };
-  });
+  const lucky = resource(
+    () => synergia(login, 'LuckyNumbers').then((r) => r.LuckyNumber?.LuckyNumber ?? null, () => null),
+    () => `lucky/${login}/${t}`,
+  );
 </script>
 
 <header class="greeting">
-  <h1>{greeting}</h1>
+  <h1 tabindex="-1">{greeting}</h1>
   <p class="muted">
-    {[fmtDay(t), student, lucky.data && `szczęśliwy numerek ${lucky.data}`].filter(Boolean).join(' · ')}
+    {fmtDay(t)}{#if lucky.data}{' · '}<span class="lucky">Szczęśliwy numerek <strong>{lucky.data}</strong></span>{/if}
   </p>
+  <!-- Each a way into its page. A zero, or a count still loading, is left out rather than shown as a figure.
+       Today's lessons and the coming events are not counted here: the panels below list them. -->
+  {#if news.length}
+    <p class="news">
+      {#each news as [href, n, word], i (href)}{#if i}{' · '}{/if}<a {href}><strong class="new">{n}</strong> {word}</a>{/each}
+    </p>
+  {/if}
 </header>
 
-<!-- A figure still loading is a grey dash, never a zero that would pass for an answer. -->
-{#snippet tile(href, label, value, note)}
-  <li>
-    <a {href}>
-      <span>{label}</span>
-      <strong class:none={value === undefined}>{value ?? '–'}</strong>
-      <small>{note ?? ''}</small>
-    </a>
-  </li>
-{/snippet}
-
-<ul class="tiles">
-  {@render tile('#/wiadomosci', 'Nieprzeczytane', inbox.unread, 'wiadomości')}
-  {@render tile('#/plan', lessons.label ?? 'Lekcje', lessons.count, lessons.note)}
-  {@render tile('#/oceny', 'Nowe oceny', recent.data?.week, 'z ostatnich 7 dni')}
-  {@render tile('#/terminarz', 'Terminarz', events.data?.length, `w ciągu ${AHEAD} dni`)}
-</ul>
-
+<!-- Two columns on a wide screen, each a stack of panels at their own height. -->
 <div class="panels">
-  <section class="card" class:today={day.data?.date === t}>
-    <div class="head">
-      <h2>{dayName(day.data?.date ?? t)}</h2>
-      <a href="#/plan">Cały plan</a>
-    </div>
-    <Async r={day}>
-      {#snippet children(d)}
-        {#if d}
-          <Lessons lessons={d.lessons} live={d.date === t} />
-        {:else}
-          <p class="muted">Brak lekcji w najbliższych dniach.</p>
-        {/if}
-      {/snippet}
-    </Async>
-  </section>
+  <div class="col">
+    <section class="card">
+      <div class="head">
+        <h2>{dayName(day.data?.date ?? t)}</h2>
+        <a href="#/plan">Cały plan<Icon name="right" size={14} /></a>
+      </div>
+      <Async r={day}>
+        {#snippet children(d)}
+          {#if d}
+            <Lessons lessons={d.lessons} live={d.date === t} />
+          {:else}
+            <p class="muted">Brak lekcji w najbliższych dniach.</p>
+          {/if}
+        {/snippet}
+      </Async>
+    </section>
 
-  <section class="card">
-    <div class="head">
-      <h2>Aktywność</h2>
-      <a href="#/aktywnosc">Cała aktywność</a>
-    </div>
-    <Activity {login} limit={5} />
-  </section>
+    <section class="card">
+      <div class="head">
+        <h2>Ostatnie oceny</h2>
+        <a href="#/oceny">Wszystkie oceny<Icon name="right" size={14} /></a>
+      </div>
+      <Async r={recent}>
+        {#snippet children(r)}
+          {#if r.list.length}
+            <ul class="entries recent">
+              {#each r.list as g (g.id)}
+                <li>
+                  <span class="chip static {g.tone}" class:final={g.kind}><Mark value={g.value} /></span>
+                  <span>{g.name}{#if g.kind}<span class="muted">{' · '}{g.kind.replace(/^Ocena /, '').toLowerCase()}</span>{/if}</span>
+                  <span class="muted">{fmtDate(addedAt(g))}</span>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="muted">Brak ocen.</p>
+          {/if}
+        {/snippet}
+      </Async>
+    </section>
+  </div>
 
-  <section class="card">
-    <div class="head">
-      <h2>Ostatnie oceny</h2>
-      <a href="#/oceny">Wszystkie oceny</a>
-    </div>
-    <Async r={recent}>
-      {#snippet children(r)}
-        {#if r.list.length}
-          <ul class="entries">
-            {#each r.list as g (g.id)}
-              <li>
-                <span class="chip static {g.tone}">{g.value}</span>
-                <span>{g.name}</span>
-                <span class="muted">{fmtDate(g.date)}</span>
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <p class="muted">Brak ocen.</p>
-        {/if}
-      {/snippet}
-    </Async>
-  </section>
+  <div class="col">
+    <section class="card">
+      <div class="head">
+        <h2>Najbliższe {AHEAD} dni</h2>
+        <a href="#/terminarz">Terminarz<Icon name="right" size={14} /></a>
+      </div>
+      <Async r={events} empty="Nic zaplanowanego.">
+        {#snippet children(list)}
+          <Events events={list} today={t} flat />
+        {/snippet}
+      </Async>
+    </section>
 
-  <section class="card">
-    <div class="head">
-      <h2>Najbliższe {AHEAD} dni</h2>
-      <a href="#/terminarz">Terminarz</a>
-    </div>
-    <Async r={events} empty="Nic zaplanowanego.">
-      {#snippet children(list)}
-        <Events events={list} today={t} flat />
-      {/snippet}
-    </Async>
-  </section>
+    <section class="card">
+      <div class="head">
+        <h2>Aktywność</h2>
+        <a href="#/aktywnosc">Cała aktywność<Icon name="right" size={14} /></a>
+      </div>
+      <Activity {login} limit={5} />
+    </section>
+  </div>
 </div>

@@ -1,7 +1,8 @@
 <script>
-  import { api, post, session, net, clock, lookup, clearApiCache, inbox } from './api.svelte.js';
+  import { api, post, session, net, clock, lookup, clearApiCache, inbox, update, drafts } from './api.svelte.js';
+  import { tick } from 'svelte';
   import { refreshUnread } from './webmail.js';
-  import { initials } from './util.js';
+  import { initials, fmtUnix } from './util.js';
   import Icon from './Icon.svelte';
   import Login from './Login.svelte';
   import Home from './Home.svelte';
@@ -53,6 +54,8 @@
     return { page: visible(page) || page === 'wiecej' ? page : 'start', arg: rest.join('/') || undefined };
   });
   const View = $derived(PAGES[route.page]?.view);
+  // Writing a message is a task of its own: the page keeps the back link and the send bar, not the tabs.
+  const writing = $derived(route.page === 'wiadomosci' && /^nowa(\/|$)/.test(route.arg ?? ''));
   const accounts = $derived(session.me?.accounts ?? []);
   const name = $derived(accounts.find((a) => a.login === login)?.name ?? accounts[0]?.name ?? session.me?.email ?? '');
 
@@ -69,13 +72,60 @@
     () => (session.me ??= null),
   );
 
+  /**
+   * Each history entry remembers the route it was opened from (`history.state.from`); an entry that already has one
+   * is being gone back (or forward) to. Then the page returns to where it was, otherwise it starts at the top.
+   */
+  const SCROLL_MAX = 30;
+  const positions = new Map();
+  let last = location.hash;
+  let landing = 0;
+  history.scrollRestoration = 'manual';
+
+  /** The view loads after the route changes, so the old place is reached once the page is tall enough, or in 2 s. */
+  function land(y) {
+    const seq = ++landing;
+    const end = performance.now() + 2000;
+    const step = () => {
+      if (seq !== landing) return;
+      if (document.documentElement.scrollHeight - innerHeight >= y || performance.now() > end) scrollTo(0, y);
+      else requestAnimationFrame(step);
+    };
+    step();
+  }
+
   $effect(() => {
     const onHash = () => {
-      hash = location.hash;
-      scrollTo(0, 0);
+      positions.delete(last);
+      positions.set(last, scrollY);
+      if (positions.size > SCROLL_MAX) positions.delete(positions.keys().next().value);
+      const revisit = history.state?.from !== undefined;
+      if (!revisit) history.replaceState({ from: last }, '');
+      last = hash = location.hash;
+      land(revisit ? (positions.get(last) ?? 0) : 0);
+      // A screen reader hears the new view by its heading; preventScroll leaves the place to land().
+      tick().then(() => document.querySelector('main h1')?.focus({ preventScroll: true }));
+    };
+    // A link back to the view this one was opened from goes back in history instead, so the system back button
+    // does not return here afterwards.
+    const onClick = (e) => {
+      const a = e.target.closest?.('a.back');
+      if (a && history.state?.from === a.getAttribute('href')) {
+        e.preventDefault();
+        history.back();
+      }
     };
     addEventListener('hashchange', onHash);
-    return () => removeEventListener('hashchange', onHash);
+    addEventListener('click', onClick);
+    return () => {
+      removeEventListener('hashchange', onHash);
+      removeEventListener('click', onClick);
+    };
+  });
+
+  $effect(() => {
+    const label = route.page === 'wiecej' ? 'Więcej' : route.page !== 'start' && PAGES[route.page]?.label;
+    document.title = label ? `${label} · Dziennik` : 'Dziennik';
   });
 
   $effect(() => {
@@ -148,9 +198,13 @@
 {:else}
   <!-- The hash is the router, so the skip link moves focus instead of following an anchor. -->
   <button class="skip" onclick={() => document.querySelector('main').focus()}>Przejdź do treści</button>
-  <div class="shell">
+  <div class="shell" class:writing>
     <aside class="side">
-      <div class="accounts">
+      <div class="brandbar">
+        <span class="wordmark">Dziennik</span>
+        <button class="icon-btn" class:busy={net.busy > 0} onclick={() => clock.tick++} aria-label="Odśwież" title="Odśwież"><Icon name="refresh" size={18} /></button>
+      </div>
+      <div class="accounts" role="group" aria-label="Uczeń">
         {#each accounts as a (a.login)}
           <button class="nav-row account" aria-pressed={a.login === login} onclick={() => (login = a.login)}>
             <span class="avatar" aria-hidden="true">{initials(a.name ?? a.login)}</span>
@@ -172,9 +226,10 @@
       </nav>
       <div class="side-foot">
         <Install row />
-        <button class="nav-row" class:busy={net.busy > 0} onclick={() => clock.tick++}><Icon name="refresh" size={18} />Odśwież</button>
-        <button class="nav-row" onclick={logout}><Icon name="logout" size={18} />Wyloguj</button>
-        <small class="muted">{session.me.email}</small>
+        <div class="me">
+          <small class="muted grow">{session.me.email}</small>
+          <button class="icon-btn" onclick={logout} aria-label="Wyloguj" title="Wyloguj"><Icon name="logout" size={18} /></button>
+        </div>
       </div>
     </aside>
 
@@ -199,28 +254,39 @@
       </header>
 
       {#if !net.online}
-        <p class="banner" role="status">Offline: dane z ostatniego połączenia.</p>
+        <p class="banner" role="status"><span><strong>Offline:</strong> dane z ostatniego połączenia{net.synced ? ` (${fmtUnix(net.synced / 1000)})` : ''}.</span></p>
+      {/if}
+      <!-- Shown again once a message being written is sent or dropped; until then the new build waits. -->
+      {#if update.ready && !drafts.open}
+        <p class="banner" role="status">Jest nowa wersja aplikacji.<button class="secondary" onclick={() => location.reload()}>Zaktualizuj</button></p>
       {/if}
 
       <main tabindex="-1">
         {#if more.includes(route.page) && !route.arg}
           <p><a class="back" href="#/wiecej"><Icon name="left" size={18} />Więcej</a></p>
         {/if}
-        {#if route.page !== 'start'}
-          <h1 class="title">{route.page === 'wiecej' ? 'Więcej' : PAGES[route.page].label}</h1>
+        <!-- A message and the form name themselves, under their own way back. -->
+        {#if route.page !== 'start' && !(route.page === 'wiadomosci' && route.arg)}
+          <h1 class="title" tabindex="-1">{route.page === 'wiecej' ? 'Więcej' : PAGES[route.page].label}</h1>
         {/if}
         {#if route.page === 'wiecej'}
-          <ul class="card list menu">
-            {#each more as p (p)}
-              <li>
-                <a href="#/{p}">
-                  <span class="tile"><Icon name={PAGES[p].icon} size={20} /></span>
-                  <span class="grow">{PAGES[p].label}</span>
-                  <span class="chev"><Icon name="right" size={18} /></span>
-                </a>
-              </li>
-            {/each}
-          </ul>
+          <!-- The student's pages, then the account's, as in the sidebar. -->
+          {#each [more.filter((p) => !PAGES[p].global), more.filter((p) => PAGES[p].global)] as group, i (i)}
+            {#if group.length}
+              {#if i}<h2 class="section">Konto</h2>{/if}
+              <ul class="card list menu">
+                {#each group as p (p)}
+                  <li>
+                    <a href="#/{p}">
+                      <span class="tile"><Icon name={PAGES[p].icon} size={20} /></span>
+                      <span class="grow">{PAGES[p].label}</span>
+                      <span class="chev"><Icon name="right" size={18} /></span>
+                    </a>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          {/each}
           <Install />
           <p class="center muted">Zalogowano jako {session.me.email}</p>
           <button class="secondary wide" onclick={logout}><Icon name="logout" size={20} />Wyloguj</button>

@@ -74,10 +74,11 @@ S = {
         {"Id": "a1", "Date": "2026-10-01", "LessonNo": "1", "Type": {"Id": 100}, "Lesson": {"Id": 1}},
         {"Id": "a2", "Date": "2026-10-02", "LessonNo": "2", "Type": {"Id": "1"}, "Lesson": {"Id": 1}},
         {"Id": "a3", "Date": "2026-10-03", "LessonNo": "1", "Type": {"Id": 2}},
-        {"Id": "a4", "Date": "2026-10-03", "LessonNo": "4", "Type": {"Id": 1}},
+        {"Id": "a4", "Date": "2026-10-03", "LessonNo": "4", "Type": {"Id": 3}},
         {"Id": "a5", "Date": "2026-10-04", "LessonNo": "3", "Type": {"Id": 50}}]},
     "Attendances/Types": {"Types": [
         {"Id": 1, "Name": "Nieobecność", "Short": "nb", "Standard": True}, {"Id": 2, "Name": "Spóźnienie", "Short": "sp", "Standard": True},
+        {"Id": 3, "Name": "Nieobecność uspr.", "Short": "u", "Standard": True}, {"Id": 4, "Name": "Zwolnienie", "Short": "zw", "Standard": True},
         {"Id": 100, "Name": "Obecność", "Short": "ob", "Standard": True},
         {"Id": 50, "Name": "Obecność (zdalna)", "Short": "zd", "StandardType": {"Id": 100}}]},
     "LuckyNumbers": {"LuckyNumber": {"LuckyNumber": 13, "LuckyNumberDay": "2026-11-10"}},
@@ -107,6 +108,8 @@ S = {
 
 TODAY = dt.date.today()
 def ahead(n): return (TODAY + dt.timedelta(days=n)).isoformat()
+# The 4+ was added yesterday: a new grade, with its dot until opened.
+S["Grades"]["Grades"][1]["AddDate"] = f"{ahead(-1)} 10:00:00"
 MSG_READ = {"11": False}
 HW = {"read": {2}, "done": set()}
 SENT = {}
@@ -118,6 +121,46 @@ GROUPS = {
 
 # The message module of the Synergia website, in the markup the real one had in November 2026.
 WEB_READ = {"301": False}
+# Messages sent through the site's form: (id, recipients, subject, body, date), newest first.
+WEB_SENT = []
+WEB_PEOPLE = {"wychowawca": [("1000001", "Nowak Anna")], "nauczyciel": [("1000001", "Nowak Anna"), ("1000002", "Zieliński Piotr")]}
+WEB_FORM = ('<FORM ACTION="/wiadomosci" NAME="formWiadomosci" ID="formWiadomosci" enctype="multipart/form-data" METHOD="POST">'
+            '<input type="hidden" name="requestkey" value="{key}" /><input type="hidden" name="filtrUzytkownikow" id="filtrUzytkownikow" value="0" />'
+            '<input type="hidden" name="idPojemnika" value="" />{fields}<input type="HIDDEN" name="poprzednia" value="5">{more}'
+            '<input type="hidden" name="fileStorageIdentifier" id="fileStorageUniqueId" value=""/>'
+            '<INPUT TYPE="submit" VALUE="Wyślij" NAME="wyslij" TABINDEX="5" id="sendButton" class="medium" /></FORM>')
+
+def web_radio(kind, label, args="false, 0 "):
+    return (f"""<input type="radio" name="adresat" id="radio_{kind}" value="{kind}" onClick='selectRecipients("{kind}", {args});' class="recipiantTypeRadio" />"""
+            f'<label for="radio_{kind}">{label}</label>')
+
+def web_recipients(kind):
+    if kind not in WEB_PEOPLE:
+        return '<hr class="message-block-separator"><table class="message-recipients-options"><tr><td><select name="idGrupy" id="idGrupy"><option value="0"></option></select></td></tr></table>'
+    rows = "".join(f'<tr class="line0"> <td class="center micro"> <input type="checkbox" value="{i}" id="check_{i}" name="DoKogo[]" >'
+                   f'<input type="hidden" name="DoKogo_hid[]" value="{i}"></td> <td> <label class="d-flex flex-align-center gap-1" for="check_{i}">'
+                   f'<span>{name}</span></label> </td> <td class="center">1</td> </tr>' for i, name in WEB_PEOPLE[kind])
+    return ('<table class="message-recipients-detail " ><thead> <tr> <td><input name="zaznacz_wszystkie" type="checkbox"></td> <td>Nauczyciel</td>'
+            f' <td>Nr</td> </tr> </thead>{rows}<tfoot><tr><td colspan=3>&nbsp;</td></tr></table>')
+
+def web_post(path, fields):
+    """What the site does with a submitted form; `fields` are the [name, value] pairs the app collected."""
+    one = dict(fields)
+    many = lambda name: [v for k, v in fields if k == name]
+    if path == "getRecipients":
+        return {"html": web_recipients(one.get("typAdresata"))}
+    now = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    names = dict(p for people in WEB_PEOPLE.values() for p in people)
+    ok = one.get("wyslij") == "Wyślij" and one.get("temat") and one.get("tresc") and one.get("temat") != "blad"
+    if path == "wiadomosci/5" and ok and one.get("requestkey") == "KEY-NEW" and many("DoKogo[]") \
+            and many("DoKogo_hid[]") == [i for i, _ in WEB_PEOPLE.get(one.get("adresat"), [])]:
+        WEB_SENT.insert(0, (401 + len(WEB_SENT), ", ".join(names[i] for i in many("DoKogo[]")), one["temat"], one["tresc"], now))
+        return {"html": ""}
+    if path == "wiadomosci" and ok and one.get("requestkey") == "KEY-REPLY" and one.get("typ") == "odp" and one.get("idWiadomosciOrg") == "301":
+        WEB_SENT.insert(0, (401 + len(WEB_SENT), names[one["DoKogo"]], one["temat"], one["tresc"], now))
+        return {"html": ""}
+    # A form the site does not accept comes back as a page, and nothing is sent.
+    return {"html": web_shell("<p>Nie wysłano.</p>")} if path in ("wiadomosci/5", "wiadomosci") else None
 
 def web_shell(inner):
     unread = "" if WEB_READ["301"] else " (1)"
@@ -148,7 +191,26 @@ def website(path):
             web_row(5, 301, "Nowak Anna (nauczyciel)", "Zebranie", "2026-11-09 08:15:00", unread=not WEB_READ["301"]),
             web_row(5, 300, "Zieliński Piotr", "Regulamin", "2026-11-02 10:00:00", files=True)])}
     if path == "wiadomosci/6":
-        return {"html": web_list("Adresat", [web_row(6, 400, "Nowak Anna (nauczyciel)", "Pytanie o wycieczkę", "2026-11-03 17:30:00")])}
+        return {"html": web_list("Adresat", [web_row(6, i, who, title, date) for i, who, title, _, date in WEB_SENT]
+                                 + [web_row(6, 400, "Nowak Anna (nauczyciel)", "Pytanie o wycieczkę", "2026-11-03 17:30:00")])}
+    if path == "wiadomosci/2/5":
+        radios = (web_radio("wychowawca", "Wychowawcy") + web_radio("rada_rodzicow", "Rada klasowa rodzic&oacute;w", "false, 0 , 58899")
+                  + web_radio("nauczyciel", "Nauczyciele") + web_radio("grupa", "Grupa adresat&oacute;w"))
+        return {"html": web_shell(WEB_FORM.format(key="KEY-NEW", fields=radios + '<input type="hidden" name="Rodzaj" value="0" />'
+                                                  '<input type="text" name="temat" id="temat" class="stretch" ><TEXTAREA NAME="tresc" id="tresc_wiadomosci"></TEXTAREA>', more=""))}
+    if path == "wiadomosci/3/5/301":
+        # The reply form is the one page of the module without the folder list around it.
+        return {"html": "<html><body>" + WEB_FORM.format(
+            key="KEY-REPLY", fields='<input type="text" name="temat" id="temat" value="Re: Zebranie" class="stretch" >'
+            '<TEXTAREA NAME="tresc" id="tresc_wiadomosci">\n\n\n-----\nUżytkownik: Nowak Anna napisał:\nDzień dobry</TEXTAREA>',
+            more='<input type="HIDDEN" name="DoKogo" value="1000001"><input type="HIDDEN" name="Wid" value="301">'
+            '<input type="HIDDEN" name="idWiadomosciOrg" value="301"><input type="HIDDEN" name="idOdpowiadajacego" value="0">'
+            '<input type="HIDDEN" name="typ" value="odp">') + "</body></html>"}
+    sent = next((m for m in WEB_SENT if path == f"wiadomosci/1/6/{m[0]}/f0"), None)
+    if sent:
+        return {"html": web_message([("Temat", sent[2]), ("Wysłano", sent[4])], sent[3],
+                                    '<table class="stretch"><tr><td colspan="3"><b>Przeczytano</b></td></tr>'
+                                    f'<tr><td class="left big double">{sent[1]}</td><td class="left">NIE</td></tr></table>')}
     if path == "wiadomosci/1/5/301/f0":
         WEB_READ["301"] = True
         return {"html": web_message(
@@ -282,6 +344,9 @@ class H(SimpleHTTPRequestHandler):
         rest = p.split("/", 4)[4] if p.startswith("/api/s/") else ""
         if not STATE["logged"] or self.headers.get("content-type") != "application/json":
             return self.send(401, {"error": "unauthorized"})
+        if p.startswith("/api/w/2002u/"):
+            page = web_post(p.split("/", 4)[4], body)
+            return self.send(200, page) if page else self.send(403, {"error": "bad_path"})
         if rest in ("HomeWorkAssignments/MarkAsRead", "HomeWorkAssignments/MarkAsDone"):
             HW["read" if rest.endswith("Read") else "done"].add(body["homework"])
             return self.send(200, {"Status": "OK"})
@@ -309,6 +374,9 @@ class H(SimpleHTTPRequestHandler):
         if u.path == "/__unread":
             MSG_READ["11"] = False
             return self.send(200, {})
+        if u.path in ("/__down", "/__up"):
+            STATE["down"] = u.path == "/__down"
+            return self.send(200, {})
         if u.path == "/__admin":
             ME["admin"] = False
             return self.send(200, {})
@@ -318,6 +386,8 @@ class H(SimpleHTTPRequestHandler):
         if not u.path.startswith("/api/"):
             return super().do_GET()
         STATE["log"].append("GET " + self.path)
+        if STATE.get("down") and u.path.startswith("/api/s/"):
+            return self.send(502, {"error": "upstream"})
         if not STATE["logged"]:
             return self.send(401, {"error": "unauthorized"})
         if u.path == "/api/me":

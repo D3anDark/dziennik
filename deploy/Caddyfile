@@ -1,4 +1,6 @@
 {$DOMAIN} {
 	encode zstd gzip
+	# The app works over HTTPS only (Secure cookie, service worker), so browsers are told never to try plain HTTP.
+	header Strict-Transport-Security "max-age=31536000"
 	reverse_proxy dziennik:8080
 }

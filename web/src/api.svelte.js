@@ -2,8 +2,19 @@
 export const session = $state({ me: undefined });
 import { untrack } from 'svelte';
 
-/** `busy` counts `resource()` loads in flight: the header's refresh button turns while it is above zero. */
-export const net = $state({ online: navigator.onLine, busy: 0 });
+const SYNCED_KEY = 'synced';
+/**
+ * `busy` counts `resource()` loads in flight: the header's refresh button turns while it is above zero.
+ * `synced` is when the server last answered (ms), for the offline banner; 0 when unknown.
+ */
+export const net = $state({ online: navigator.onLine, busy: 0, synced: stored() });
+function stored() {
+  try {
+    return Number(localStorage.getItem(SYNCED_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
 addEventListener('online', () => (net.online = true));
 addEventListener('offline', () => (net.online = false));
 
@@ -14,6 +25,15 @@ addEventListener('beforeinstallprompt', (e) => {
   install.event = e;
 });
 addEventListener('appinstalled', () => (install.event = null));
+
+/** `ready` once sw.js has taken over with a build newer than the one running (main.js). */
+export const update = $state({ ready: false });
+
+/**
+ * Forms holding unsent text (Compose). Nothing reloads the app under them: iOS has no beforeunload to ask first.
+ * Change it with `untrack`, from an effect.
+ */
+export const drafts = $state({ open: 0 });
 
 /**
  * Bumping `tick` makes everything on screen load again: the refresh button does it, and so does coming back to
@@ -49,6 +69,10 @@ const MESSAGES = {
   push_denied: 'Przeglądarka nie dała zgody na powiadomienia.',
   push_failed: 'Nie udało się wysłać powiadomienia na to urządzenie. Spróbuj ponownie.',
   bad_device: 'Serwer nie obsługuje usługi powiadomień tej przeglądarki.',
+  unconfirmed: 'Librus nie potwierdził wysłania. Zanim wyślesz ponownie, sprawdź folder Wysłane.',
+  one_group: 'Na tym koncie jedna wiadomość trafia do osób z jednej grupy. Zostaw odbiorców z jednej grupy.',
+  subject_long: 'Temat może mieć najwyżej 150 znaków.',
+  body_long: 'Treść może mieć najwyżej 20 000 znaków.',
 };
 
 export function message(e) {
@@ -66,11 +90,19 @@ export async function api(path, init) {
   }
   const body = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
   if (res.status === 401 && (body?.error === 'unauthorized' || body?.error === 'relogin')) {
+    // The session ended without a logout (it ran out, or access was taken away): the cached data goes as well.
+    clearApiCache();
     session.me = null;
   }
   // Librus explains a refused write in MessagePL; views that write show it instead of the generic text.
   const cause = typeof body?.MessagePL === 'string' ? body.MessagePL : undefined;
   if (!res.ok) throw new Error(body?.error ?? `http_${res.status}`, { cause });
+  net.synced = Date.now();
+  try {
+    localStorage.setItem(SYNCED_KEY, String(net.synced));
+  } catch {
+    // Storage blocked: the banner leaves the time out after a restart.
+  }
   return body;
 }
 
@@ -133,25 +165,97 @@ export function lookup(login, path) {
 }
 
 /**
+ * The last answer of every keyed `resource()`, newest last, so a view shows at once what it showed before while a
+ * fresh answer loads. Kept in IndexedDB between starts (written when the app goes to the background) and only for
+ * the build that made it: another build may shape its data differently.
+ */
+const REMEMBER_MAX = 40;
+const remembered = new Map();
+const BUILD = import.meta.url;
+const DB = 'dziennik';
+const STORE = 'views';
+
+function remember(key, data) {
+  remembered.delete(key);
+  remembered.set(key, data);
+  if (remembered.size > REMEMBER_MAX) remembered.delete(remembered.keys().next().value);
+}
+
+/** Runs `op(store)` in one transaction; resolves with the request's result. Fails where IndexedDB is off. */
+function idb(mode, op) {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open(DB, 1);
+    open.onupgradeneeded = () => open.result.createObjectStore(STORE);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction(STORE, mode);
+      const req = op(tx.objectStore(STORE));
+      tx.oncomplete = () => {
+        db.close();
+        resolve(req.result);
+      };
+      tx.onerror = tx.onabort = () => {
+        db.close();
+        reject(tx.error);
+      };
+    };
+  });
+}
+
+const restored = idb('readonly', (s) => s.get('last'))
+  .then((saved) => {
+    if (saved?.build !== BUILD) return;
+    for (const [key, data] of saved.entries) if (!remembered.has(key)) remembered.set(key, data);
+  })
+  .catch(() => {});
+
+document.addEventListener('visibilitychange', () => {
+  // Data that cannot be cloned (it never should be) is just not kept.
+  if (document.hidden) idb('readwrite', (s) => s.put({ build: BUILD, entries: [...remembered] }, 'last')).catch(() => {});
+});
+
+/** Errors a second try can mend: no connection, Librus down or busy. */
+const passing = (e) => ['offline', 'upstream', 'maintenance'].includes(e?.message) || /^http_5\d\d$/.test(e?.message);
+
+/**
  * Loads `fn()` in an effect: reactive values read before its first await (props like `login`) re-run it,
  * as does `clock`, and a superseded run never overwrites a newer one. Call during component init.
  * A pre-effect clears `data` before the template re-renders, so markup never sees the previous run's shape.
+ * `key()` names the answer by everything `fn` depends on; with it the last answer shows until the new one is in.
+ * `error` is set when nothing can be shown, `failed` when a refresh failed under data still on screen; `retry` says
+ * whether trying again can help.
  */
-export function resource(fn) {
-  const r = $state({ data: undefined, error: '' });
+export function resource(fn, key) {
+  const r = $state({ data: undefined, error: '', failed: '', retry: false });
   let seen = clock.tick;
   $effect.pre(() => {
     let stale = false;
+    const k = key?.();
     // A refresh keeps what is on screen until the new answer is in, and keeps it if the refresh fails.
     const refresh = clock.tick !== seen && untrack(() => r.data) !== undefined;
     seen = clock.tick;
-    if (!refresh) r.data = undefined;
-    r.error = '';
+    const known = k ? remembered.get(k) : undefined;
+    if (!refresh) r.data = known;
+    // At start the saved answers may still be on their way from IndexedDB.
+    if (k && !refresh && known === undefined) restored.then(() => !stale && r.data === undefined && !r.error && (r.data = remembered.get(k)));
+    r.error = r.failed = '';
+    r.retry = false;
     untrack(() => net.busy++);
     fn()
       .then(
-        (d) => !stale && (r.data = d),
-        (e) => !stale && !refresh && (r.error = message(e)),
+        (d) => {
+          if (stale) return;
+          r.data = d;
+          if (k) remember(k, d);
+        },
+        (e) => {
+          if (stale) return;
+          r.retry = passing(e);
+          if (untrack(() => r.data) === undefined) r.error = message(e);
+          // Offline the banner already says the data is from the last connection.
+          else if (e.message !== 'offline') r.failed = message(e);
+        },
       )
       .finally(() => net.busy--);
     return () => (stale = true);
@@ -162,7 +266,19 @@ export function resource(fn) {
 /** Student data cached by sw.js must not outlive the session on a shared device. */
 export function clearApiCache() {
   lookups.clear();
-  return 'caches' in window ? caches.delete('api-v1') : Promise.resolve(false);
+  remembered.clear();
+  net.synced = 0;
+  try {
+    localStorage.removeItem(SYNCED_KEY);
+    // Which new grades were opened (data.js): nothing of a student stays behind on a shared device.
+    for (const k of Object.keys(localStorage)) if (k.startsWith('seen-grades/')) localStorage.removeItem(k);
+  } catch {
+    // Storage blocked: nothing was saved.
+  }
+  return Promise.all([
+    'caches' in window && caches.delete('api-v1'),
+    idb('readwrite', (s) => s.delete('last')).catch(() => {}),
+  ]);
 }
 
 /** Librus mixes numeric and string ids for the same entity; key everything by string. */

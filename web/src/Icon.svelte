@@ -1,6 +1,7 @@
 <script>
   /** Outline icons on a 24px grid, drawn with currentColor. Decorative: the text next to them carries the meaning. */
-  let { name, size = 22 } = $props();
+  /** `off` strikes the icon through: the thing it stands for, removed or turned off. */
+  let { name, size = 22, off = false } = $props();
 
   const PATHS = {
     home: ['M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z'],
@@ -31,6 +32,9 @@
     pulse: ['M3.5 12h4l2.5-6 4 12 2.5-6h4'],
     refresh: ['M19.5 12a7.5 7.5 0 1 1-2.2-5.3', 'M19.5 4.5v4h-4'],
     bell: ['M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z', 'M10 20.5a2 2 0 0 0 4 0'],
+    'bell-off': ['M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z', 'M10 20.5a2 2 0 0 0 4 0', 'M4 3.5l16 17'],
+    eye: ['M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z', 'M12 14.75a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5z'],
+    'eye-off': ['M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z', 'M12 14.75a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5z', 'M4 4l16 16'],
   };
 </script>
 
@@ -46,5 +50,5 @@
   stroke-linejoin="round"
   aria-hidden="true"
 >
-  {#each PATHS[name] ?? [] as d (d)}<path {d} />{/each}
+  {#each [...(PATHS[name] ?? []), ...(off ? ['M4 3.5l16 17'] : [])] as d (d)}<path {d} />{/each}
 </svg>

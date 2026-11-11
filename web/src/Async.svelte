@@ -1,14 +1,32 @@
 <script>
+  import { clock } from './api.svelte.js';
+  import Icon from './Icon.svelte';
+
   /** Renders the loading, error and empty states of a `resource()`; `children` gets the data. */
   let { r, empty = 'Brak danych.', children } = $props();
 </script>
 
+{#snippet again()}
+  <button class="link" onclick={() => clock.tick++}><Icon name="refresh" size={18} />Spróbuj ponownie</button>
+{/snippet}
+
 {#if r.error}
-  <p class="error" role="alert">{r.error}</p>
+  <div class="error" role="alert">
+    <p>{r.error}</p>
+    {#if r.retry}{@render again()}{/if}
+  </div>
 {:else if r.data === undefined}
   <p class="center muted" role="status">Ładowanie…</p>
-{:else if Array.isArray(r.data) && !r.data.length}
-  <p class="center muted">{empty}</p>
 {:else}
-  {@render children(r.data)}
+  {#if r.failed}
+    <div class="note-line muted" role="status">
+      <p>Nie udało się odświeżyć, widać ostatnie dane. {r.failed}</p>
+      {#if r.retry}{@render again()}{/if}
+    </div>
+  {/if}
+  {#if Array.isArray(r.data) && !r.data.length}
+    <p class="center muted">{empty}</p>
+  {:else}
+    {@render children(r.data)}
+  {/if}
 {/if}
