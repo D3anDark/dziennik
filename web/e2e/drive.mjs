@@ -89,6 +89,9 @@ await send('Page.navigate', { url: base + '/' });
 await sleep(1000);
 
 check('login form shown when unauthenticated', await js(`!!document.querySelector('form.login')`));
+await js(`document.querySelector('form.login details').open = true`);
+await sleep(400);
+check('privacy: the notice names who runs the server before anyone signs in', await js(`document.querySelector('form.login .privacy')?.textContent.includes('Jan Testowy, jan@example.com')`));
 await fill('zle');
 await sleep(400);
 const alert = await text('[role=alert]');
@@ -272,7 +275,7 @@ await shot('4-attendance');
 
 await go('#/wiecej', `document.querySelectorAll('.menu a').length > 0`);
 const menu = await text('.menu a');
-check('more: menu', menu.length === 11 && menu[0] === 'Frekwencja' && menu.includes('Aktywność') && !menu.some((m) => m.startsWith('Wiadomości')) && menu.includes('Tematy lekcji') && menu.includes('Powiadomienia') && menu.includes('Dostęp do aplikacji'), menu);
+check('more: menu', menu.length === 12 && menu[0] === 'Frekwencja' && menu.includes('Aktywność') && !menu.some((m) => m.startsWith('Wiadomości')) && menu.includes('Tematy lekcji') && menu.includes('Powiadomienia') && menu.includes('Dostęp do aplikacji') && menu.includes('Prywatność'), menu);
 check('more: tab current', (await text('nav.tabs a[aria-current=page]'))[0]?.endsWith('Więcej'));
 check('install: no button until the browser offers the app', !(await js(hasButton('Zainstaluj aplikację'))));
 await js(`(() => { const e = new Event('beforeinstallprompt', { cancelable: true }); e.prompt = () => (window.__asked = true); e.userChoice = Promise.resolve({ outcome: 'accepted' }); window.__prevented = !dispatchEvent(e); })()`);
@@ -529,7 +532,15 @@ await until(`!!document.querySelector('header.bar select')`);
 await go('#/dostep', `!!document.querySelector('.greeting')`);
 await go('#/wiecej', `document.querySelectorAll('.menu a').length > 0`);
 const plainMenu = await text('.menu a');
-check('access: page and menu entry hidden from non-admins', plainMenu.length === 10 && !plainMenu.includes('Dostęp do aplikacji') && (await log()).filter((l) => l === 'GET /api/admin/emails').length === 1, plainMenu);
+check('access: page and menu entry hidden from non-admins', plainMenu.length === 11 && !plainMenu.includes('Dostęp do aplikacji') && (await log()).filter((l) => l === 'GET /api/admin/emails').length === 1, plainMenu);
+
+await go('#/wiecej', `document.querySelectorAll('.menu a').length > 0`);
+await clickText('main button', 'Usuń moje dane');
+await sleep(600);
+check('delete my data: asked first, deleted on the server, back to login', dialog.text.startsWith('Usunąć z serwera') &&
+  (await log()).includes('DELETE /api/me') && (await js(`!!document.querySelector('form.login')`)));
+await fill('dobre');
+await until(`!!document.querySelector('header.bar select')`);
 
 await go('#/bogus', `!!document.querySelector('.greeting')`);
 check('unknown route falls back to start', await js(`!!document.querySelector('.greeting')`));

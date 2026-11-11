@@ -8,8 +8,8 @@ RUN npm run build
 
 FROM rust:1-bookworm AS server
 WORKDIR /src
-COPY Cargo.toml Cargo.lock ./
-COPY src ./src
+# The whole tree with its .git: build.rs compares it with the official repository (see /api/about).
+COPY . .
 # The cache mounts keep downloaded crates and compiled dependencies between builds, so an update compiles only what
 # changed. They are not part of the image: the binary is copied out in the same step.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

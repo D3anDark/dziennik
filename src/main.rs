@@ -1,4 +1,9 @@
 mod librus;
+// VULCAN is off: eduVULCAN's terms (ch. II sec. 15) allow only a browser without VULCAN's written consent, and the
+// code has never met a real account. To turn it on: add `httpdate = "1"` to Cargo.toml, uncomment the line below,
+// then write the sign-in and data routes (see AGENTS.md).
+// mod vulcan;
+mod provenance;
 mod push;
 mod store;
 mod watch;
@@ -9,10 +14,11 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::body::Body;
-use axum::extract::{DefaultBodyLimit, Path, RawQuery, State};
+use axum::extract::{DefaultBodyLimit, Path, RawQuery, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
+use axum::middleware::Next;
 use axum::{Json, Router};
 use regex::Regex;
 use serde::Deserialize;
@@ -54,6 +60,10 @@ struct App {
     vapid: Vapid,
     /// Asks the notification loop for an early round: a new device or a new login.
     wake: tokio::sync::Notify,
+    /// OPERATOR: name and contact of whoever runs this server, the controller of its data under RODO.
+    operator: String,
+    /// BUILD_STATE from build.rs, as `confirm` left it at start.
+    build: &'static str,
 }
 
 type Shared = State<Arc<App>>;
@@ -177,9 +187,9 @@ impl App {
         Ok(())
     }
 
-    async fn refresh_synergia(&self, email: &str, login: &str, stale: &str) -> Result<String, ApiError> {
+    async fn refresh_synergia(&self, email: &str, sid: Option<&str>, login: &str, stale: &str) -> Result<String, ApiError> {
         let _guard = self.refresh_lock.lock().await;
-        let mut t = self.store.tokens(email).ok_or(RELOGIN)?;
+        let mut t = self.store.tokens(email, sid).ok_or(RELOGIN)?;
         let current = account_token(&t, login)?;
         if current != stale {
             return Ok(current);
@@ -194,7 +204,7 @@ impl App {
                 if let Some(r) = p.refresh_token {
                     t.refresh = r;
                 }
-                self.store.update_tokens(email, &t).map_err(db_err)?;
+                self.store.update_tokens(email, sid, &t).map_err(db_err)?;
                 librus::fresh_account(&self.http, &t.access, login).await?
             }
             r => r?,
@@ -202,24 +212,26 @@ impl App {
         if let Some(slot) = t.accounts.iter_mut().find(|a| a.login == login) {
             *slot = acc;
         }
-        self.store.update_tokens(email, &t).map_err(db_err)?;
+        self.store.update_tokens(email, sid, &t).map_err(db_err)?;
         account_token(&t, login)
     }
 
     /// Sends `req` with the account token, retrying once with a refreshed token on 401.
     /// Librus rejects a stale token before acting, so the retry cannot repeat a write.
+    /// `sid` is the caller's session, whose own copy of the tokens it opens; the watcher has none.
     async fn send(
         &self,
         email: &str,
+        sid: Option<&str>,
         login: &str,
         req: impl Fn(&str) -> reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, ApiError> {
-        let token = account_token(&self.store.tokens(email).ok_or(RELOGIN)?, login)?;
+        let token = account_token(&self.store.tokens(email, sid).ok_or(RELOGIN)?, login)?;
         let res = req(&token).send().await.map_err(librus::Error::from)?;
         if res.status() != StatusCode::UNAUTHORIZED {
             return Ok(res);
         }
-        let fresh = self.refresh_synergia(email, login, &token).await?;
+        let fresh = self.refresh_synergia(email, sid, login, &token).await?;
         Ok(req(&fresh).send().await.map_err(librus::Error::from)?)
     }
 }
@@ -246,8 +258,12 @@ async fn login(State(app): Shared, Json(b): Json<LoginBody>) -> Result<Response,
     }
     let accounts = librus::accounts(&app.http, &tok.access_token).await?;
     let t = Tokens { access: tok.access_token, refresh: tok.refresh_token.unwrap_or_default(), accounts };
-    app.store.put_tokens(&email, &t).map_err(db_err)?;
-    let sid = app.store.new_session(&email).map_err(db_err)?;
+    // The server keeps a copy it can open on its own only for notifications; otherwise the copy is the session's.
+    let notify = !app.store.devices(&email).map_err(db_err)?.is_empty();
+    if notify {
+        app.store.put_tokens(&email, &t).map_err(db_err)?;
+    }
+    let sid = app.store.new_session(&email, (!notify).then_some(&t)).map_err(db_err)?;
     app.attempts.lock().unwrap_or_else(|p| p.into_inner()).remove(&email);
     // Fresh tokens: feeds that stopped on an expired Librus session can go on.
     app.wake.notify_one();
@@ -267,7 +283,7 @@ async fn logout(State(app): Shared, headers: HeaderMap) -> Response {
 /// The app asks this on every start, which is where a session in use gets its time renewed, cookie included.
 async fn me(State(app): Shared, headers: HeaderMap) -> Result<Response, ApiError> {
     let email = app.user(&headers)?;
-    let t = app.store.tokens(&email).ok_or(RELOGIN)?;
+    let t = app.store.tokens(&email, sid(&headers)).ok_or(RELOGIN)?;
     let me = Json(me_json(&email, &t, &app));
     Ok(match sid(&headers) {
         Some(s) if app.store.renew_session(s).map_err(db_err)? => {
@@ -336,17 +352,120 @@ async fn add_device(State(app): Shared, headers: HeaderMap, Json(b): Json<Device
         }
     }
     app.store.add_device(&email, &device).map_err(db_err)?;
+    if let Some(s) = sid(&headers) {
+        app.store.share_tokens(&email, s).map_err(db_err)?;
+    }
     app.wake.notify_one();
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn remove_device(State(app): Shared, headers: HeaderMap, Json(b): Json<DeviceBody>) -> Result<StatusCode, ApiError> {
     let email = app.user(&headers)?;
-    app.store.remove_device(&b.endpoint, Some(&email)).map_err(db_err)?;
-    if app.store.devices(&email).map_err(db_err)?.is_empty() {
+    // The last device: the feeds stop while the server's copy of the tokens is still there, then the copy moves back
+    // into this session before the device goes, so that `purge` never leaves the session without one.
+    if app.store.devices(&email).map_err(db_err)?.iter().all(|d| d.endpoint == b.endpoint) {
         watch::stop(&app, &email).await;
+        if let Some(s) = sid(&headers) {
+            app.store.unshare_tokens(&email, s).map_err(db_err)?;
+        }
     }
+    app.store.remove_device(&b.endpoint, Some(&email)).map_err(db_err)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Deletes everything the server keeps for the caller, on every device, and signs them out (RODO art. 17).
+async fn forget_me(State(app): Shared, headers: HeaderMap) -> Result<Response, ApiError> {
+    let email = app.user(&headers)?;
+    watch::stop(&app, &email).await;
+    app.store.forget(&email).map_err(db_err)?;
+    web::forget(&app, &email);
+    Ok(([(header::SET_COOKIE, session_cookie("", 0))], StatusCode::NO_CONTENT).into_response())
+}
+
+/// Who runs this server (RODO art. 13) and whether it was built from the official repository unchanged (build.rs),
+/// both shown before signing in. A changed server can lie here as well: this reveals honest changes, not a dishonest host.
+async fn about(State(app): Shared) -> Json<Value> {
+    Json(json!({ "operator": app.operator, "build": app.build, "commit": env!("BUILD_COMMIT") }))
+}
+
+// Whether this server is the official code is decided here, in the backend, and shown by it as well: `inject` puts the
+// warning into every page it serves, whoever wrote the frontend. The checks are spread on purpose (build.rs, `confirm`,
+// the start in `main`, `inject`), so a modified server has to change each before it stops warning (AGENTS.md). None of
+// them stops a determined host.
+
+/// The warning for a build not confirmed as the official one; nothing for an official build.
+fn warning(build: &str) -> Option<&'static str> {
+    match build {
+        "official" => None,
+        "modified" => Some(
+            "Hostowana wersja serwera jest niezgodna z\u{a0}tą na oficjalnym repozytorium. Jeżeli nie ufasz osobie hostującej ten projekt, nie podawaj swojego loginu i\u{a0}hasła.",
+        ),
+        _ => Some(
+            "Nie da się potwierdzić, że hostowana wersja serwera jest zgodna z\u{a0}tą na oficjalnym repozytorium. Jeżeli nie ufasz osobie hostującej ten projekt, nie podawaj swojego loginu i\u{a0}hasła.",
+        ),
+    }
+}
+
+/// src/warning.js with the warning in it. The file is compiled in: deleting it stops the build.
+fn warning_script(text: &str) -> String {
+    include_str!("warning.js").replace("__WARNING__", &json!(text).to_string())
+}
+
+/// The script `inject` puts into every page: a window with the warning, or nothing for an official build.
+async fn warning_js(State(app): Shared) -> Response {
+    let js = warning(app.build).map(warning_script);
+    let headers = [(header::CONTENT_TYPE, "text/javascript; charset=utf-8"), (header::CACHE_CONTROL, "no-store")];
+    (headers, js.unwrap_or_default()).into_response()
+}
+
+/// Adds the warning script to every HTML page served from WEB_DIR, whatever frontend is there, so a new frontend warns
+/// without knowing about it. The tag goes in for every build (the script is empty for an official one), so a page a
+/// browser keeps from one build still asks the next.
+async fn inject(mut req: Request, next: Next) -> Result<Response, ApiError> {
+    // A 304 would hand back a page kept from before the tag; pages are always sent whole.
+    req.headers_mut().remove(header::IF_MODIFIED_SINCE);
+    req.headers_mut().remove(header::IF_NONE_MATCH);
+    let res = next.run(req).await;
+    let html = res.headers().get(header::CONTENT_TYPE).is_some_and(|t| t.as_bytes().starts_with(b"text/html"));
+    if res.status() != StatusCode::OK || !html {
+        return Ok(res);
+    }
+    let (mut parts, body) = res.into_parts();
+    // shortcut: a page is read whole, up to 1 MiB, and refused above that; stream it if a frontend needs bigger pages.
+    let page = axum::body::to_bytes(body, 1 << 20).await.map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "page_too_large"))?;
+    // Bytes, not text: the page may be in any ASCII-compatible encoding. No </head>: at the end, still read as body.
+    let at = page.windows(7).position(|w| w.eq_ignore_ascii_case(b"</head>")).unwrap_or(page.len());
+    let page = [&page[..at], b"<script src=\"/api/warning.js\" defer></script>", &page[at..]].concat();
+    parts.headers.remove(header::CONTENT_LENGTH);
+    Ok(Response::from_parts(parts, Body::from(page)))
+}
+
+/// GitHub's word on an "official" build: its commit is on the official main branch. build.rs trusts the local clone,
+/// whose remote branches can be pointed anywhere (a fork with the official URL, `git update-ref`); this asks the
+/// repository itself. It only ever lowers the state.
+// shortcut: asked once at start, so a GitHub outage reads as unknown until the next restart; retry if that bites.
+async fn confirm(http: &reqwest::Client, github: &str, state: &'static str, commit: &str) -> &'static str {
+    if state != "official" {
+        return state;
+    }
+    let repo = provenance::OFFICIAL.trim_start_matches("github.com/");
+    // For a commit on main the comparison lists no commits and no files, so the answer is small.
+    let res = http
+        .get(format!("{github}/repos/{repo}/compare/main...{commit}"))
+        .header(header::USER_AGENT, "dziennik")
+        .header(header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await;
+    match res {
+        Ok(r) if r.status() == StatusCode::NOT_FOUND => "modified",
+        Ok(r) if r.status().is_success() => match r.json::<Value>().await.ok().as_ref().and_then(|v| v["status"].as_str()) {
+            // "behind": main has moved past this commit and still contains it.
+            Some("identical" | "behind") => "official",
+            Some(_) => "modified",
+            None => "unknown",
+        },
+        _ => "unknown",
+    }
 }
 
 async fn access(State(app): Shared, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
@@ -398,7 +517,7 @@ async fn proxy(
     }
     let mut url = reqwest::Url::parse(&format!("{}/{path}", app.api)).map_err(|_| ApiError(StatusCode::BAD_REQUEST, "bad_path"))?;
     url.set_query(query.as_deref());
-    forward(&app, &email, &login, |token| app.http.get(url.clone()).bearer_auth(token)).await
+    forward(&app, &email, sid(&headers), &login, |token| app.http.get(url.clone()).bearer_auth(token)).await
 }
 
 /// Reads the Synergia website where the API refuses an account without a subscription. The page travels inside
@@ -406,9 +525,9 @@ async fn proxy(
 async fn website(State(app): Shared, headers: HeaderMap, Path((login, path)): Path<(String, String)>) -> Result<Response, ApiError> {
     let email = app.user(&headers)?;
     let body = if WEB_PAGE_RE.is_match(&path) {
-        json!({ "html": web::read(&app, &email, &login, &path, false).await? })
+        json!({ "html": web::read(&app, &email, sid(&headers), &login, &path, false).await? })
     } else if WEB_FILE_RE.is_match(&path) {
-        json!({ "DownloadUrl": web::read(&app, &email, &login, &path, true).await? })
+        json!({ "DownloadUrl": web::read(&app, &email, sid(&headers), &login, &path, true).await? })
     } else {
         return Err(ApiError(StatusCode::BAD_REQUEST, "bad_path"));
     };
@@ -431,7 +550,7 @@ async fn write(
         return Err(ApiError(StatusCode::FORBIDDEN, "bad_path"));
     }
     let url = format!("{}/{path}", app.api);
-    forward(&app, &email, &login, |token| app.http.post(&url).bearer_auth(token).json(&body)).await
+    forward(&app, &email, sid(&headers), &login, |token| app.http.post(&url).bearer_auth(token).json(&body)).await
 }
 
 /// The only forms the app submits on the Synergia website, and whether the site takes them as multipart: the people
@@ -448,7 +567,7 @@ async fn website_write(
 ) -> Result<Response, ApiError> {
     let email = app.user(&headers)?;
     let &(_, multipart) = WEB_WRITES.iter().find(|w| w.0 == path).ok_or(ApiError(StatusCode::FORBIDDEN, "bad_path"))?;
-    let html = web::post(&app, &email, &login, &path, fields, multipart).await?;
+    let html = web::post(&app, &email, sid(&headers), &login, &path, fields, multipart).await?;
     Ok(([(header::CACHE_CONTROL, "private, no-store")], Json(json!({ "html": html }))).into_response())
 }
 
@@ -456,10 +575,11 @@ async fn website_write(
 async fn forward(
     app: &App,
     email: &str,
+    sid: Option<&str>,
     login: &str,
     req: impl Fn(&str) -> reqwest::RequestBuilder,
 ) -> Result<Response, ApiError> {
-    let res = app.send(email, login, req).await?;
+    let res = app.send(email, sid, login, req).await?;
     let mut out = Response::builder()
         .status(res.status())
         .header(header::CACHE_CONTROL, "private, no-store");
@@ -495,6 +615,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .timeout(librus::TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
+    let commit = env!("BUILD_COMMIT");
+    let hex = commit.len() == 40 && commit.bytes().all(|b| b.is_ascii_hexdigit());
+    // build.rs gives only these; anything else means it was rewritten, and the server does not start on its word.
+    let build = match env!("BUILD_STATE") {
+        "official" if hex => confirm(&http, "https://api.github.com", "official", commit).await,
+        "modified" if hex => "modified",
+        "unknown" if commit.is_empty() => "unknown",
+        other => return Err(format!("build state {other:?} with commit {commit:?} is not one build.rs gives").into()),
+    };
+    // An emptied src/warning.js, or one without the place for the text, would warn no one: the server does not start.
+    if let Some(text) = warning(build)
+        && !warning_script(text).contains(&json!(text).to_string())
+    {
+        return Err("src/warning.js does not show the build warning (see AGENTS.md)".into());
+    }
+    let web_dir = env("WEB_DIR", "web/dist");
     let app = Arc::new(App {
         store,
         http,
@@ -507,13 +643,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         web: Mutex::default(),
         vapid,
         wake: tokio::sync::Notify::new(),
+        operator: env("OPERATOR", "").trim().to_string(),
+        build,
     });
     tokio::spawn(watch::run(app.clone()));
 
     let bind = env("BIND", "127.0.0.1:8080");
     let listener = tokio::net::TcpListener::bind(&bind).await?;
-    eprintln!("listening on http://{bind}");
-    axum::serve(listener, router(app, &env("WEB_DIR", "web/dist"))).await?;
+    eprintln!("listening on http://{bind}, build {build} {commit}");
+    axum::serve(listener, router(app, &web_dir)).await?;
     Ok(())
 }
 
@@ -521,7 +659,9 @@ fn router(app: Arc<App>, web_dir: &str) -> Router {
     Router::new()
         .route("/api/login", post(login))
         .route("/api/logout", post(logout))
-        .route("/api/me", get(me))
+        .route("/api/me", get(me).delete(forget_me))
+        .route("/api/about", get(about))
+        .route("/api/warning.js", get(warning_js))
         .route("/api/admin/emails", get(access).post(allow))
         .route("/api/admin/emails/{email}", delete(revoke))
         .route("/api/push", get(feeds).post(add_device).delete(remove_device))
@@ -530,7 +670,7 @@ fn router(app: Arc<App>, web_dir: &str) -> Router {
         .route("/api/w/{login}/{*path}", get(website).post(website_write))
         // Message bodies are plain text; nothing the app sends comes near this.
         .layer(DefaultBodyLimit::max(256 * 1024))
-        .fallback_service(ServeDir::new(web_dir))
+        .fallback_service(Router::new().fallback_service(ServeDir::new(web_dir)).layer(axum::middleware::from_fn(inject)))
         // Told nothing, browsers keep index.html for a while on their own guess, and an installed app goes on starting
         // the previous build. Everything else it names is hashed (/assets) or fetched by the service worker itself.
         .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, |res: &Response| {
@@ -567,13 +707,12 @@ mod tests {
             web: Mutex::default(),
             vapid: Vapid::load(&Vapid::generate().unwrap(), "admin@x.pl").unwrap(),
             wake: tokio::sync::Notify::new(),
+            operator: String::new(),
+            build: "modified",
         });
         let account = Account { login: "1u".into(), access_token: Some("tok".into()), student_name: None, state: None };
         let tokens = Tokens { access: "p".into(), refresh: "r".into(), accounts: vec![account] };
-        let sid = |email: &str| {
-            app.store.put_tokens(email, &tokens).unwrap();
-            app.store.new_session(email).unwrap()
-        };
+        let sid = |email: &str| app.store.new_session(email, Some(&tokens)).unwrap();
         let (admin, user, guest) = (sid("admin@x.pl"), sid("user@x.pl"), sid("guest@x.pl"));
         app.store.allow("guest@x.pl").unwrap();
 
@@ -581,12 +720,26 @@ mod tests {
         let base = format!("http://{}", listener.local_addr().unwrap());
         let web = std::env::temp_dir().join(format!("dziennik-web-{}", std::process::id()));
         std::fs::create_dir_all(&web).unwrap();
-        std::fs::write(web.join("index.html"), "<!doctype html>").unwrap();
+        std::fs::write(web.join("index.html"), "<!doctype html><HTML><HEAD><title>t</title></HEAD><body>x</body>").unwrap();
+        std::fs::write(web.join("bare.html"), "<p>x</p>").unwrap();
+        std::fs::write(web.join("app.js"), "</head>").unwrap();
         tokio::spawn(axum::serve(listener, router(app.clone(), web.to_str().unwrap())).into_future());
         let http = reqwest::Client::new();
         // The page is asked for again on every start, so an installed app picks up a new build.
-        let page = http.get(&base).send().await.unwrap();
+        let page = http.get(&base).header(header::IF_MODIFIED_SINCE, "Fri, 01 Jan 2100 00:00:00 GMT").send().await.unwrap();
         assert_eq!(page.headers().get(header::CACHE_CONTROL).map(|v| v.to_str().unwrap()), Some("no-cache"));
+        // Whatever frontend is there, its pages load the server's warning, and a kept copy is not answered with a 304.
+        assert_eq!(page.status(), 200);
+        let tag = "<script src=\"/api/warning.js\" defer></script>";
+        assert_eq!(page.text().await.unwrap(), format!("<!doctype html><HTML><HEAD><title>t</title>{tag}</HEAD><body>x</body>"));
+        assert_eq!(http.get(format!("{base}/bare.html")).send().await.unwrap().text().await.unwrap(), format!("<p>x</p>{tag}"));
+        assert_eq!(http.get(format!("{base}/app.js")).send().await.unwrap().text().await.unwrap(), "</head>");
+        let script = http.get(format!("{base}/api/warning.js")).send().await.unwrap();
+        assert_eq!(script.headers()[header::CONTENT_TYPE], "text/javascript; charset=utf-8");
+        let script = script.text().await.unwrap();
+        assert!(script.contains("const text = \"Hostowana wersja serwera jest niezgodna z\u{a0}tą"), "{script}");
+        assert_eq!(warning("official"), None, "an official build sends the script empty");
+        assert!(warning("unknown").unwrap().starts_with("Nie da się potwierdzić"));
         std::fs::remove_dir_all(&web).unwrap();
         let ask = async |method: Method, path: &str, sid: &str, body: Option<Value>| {
             let mut req = http.request(method, format!("{base}{path}")).header(header::COOKIE, format!("sid={sid}"));
@@ -619,6 +772,10 @@ mod tests {
             assert_eq!(ask(Method::POST, path, "0000", Some(body)).await, refused(401, "unauthorized"), "{path}");
         }
 
+        assert_eq!(ask(Method::DELETE, "/api/me", "0000", None).await, refused(401, "unauthorized"));
+        // The privacy notice and the build's state are read before signing in.
+        assert_eq!(ask(Method::GET, "/api/about", "0000", None).await.0, 200);
+
         // The access list belongs to the administrators.
         assert_eq!(ask(Method::GET, "/api/admin/emails", &user, None).await, refused(403, "forbidden"));
         assert_eq!(ask(Method::POST, "/api/admin/emails", &user, Some(json!({ "email": "new@x.pl" }))).await, refused(403, "forbidden"));
@@ -640,6 +797,11 @@ mod tests {
         assert_eq!(ask(Method::GET, "/api/me", &guest, None).await.0, 200);
         assert_eq!(ask(Method::DELETE, "/api/admin/emails/guest@x.pl", &admin, None).await.0, 200);
         assert_eq!(ask(Method::GET, "/api/me", &guest, None).await, refused(401, "unauthorized"));
+
+        // Deleting one's own data ends the session and leaves nothing behind.
+        assert_eq!(ask(Method::DELETE, "/api/me", &user, None).await.0, 204);
+        assert_eq!(ask(Method::GET, "/api/me", &user, None).await, refused(401, "unauthorized"));
+        assert!(app.store.tokens("user@x.pl", Some(&user)).is_none());
     }
 
     #[test]
@@ -649,5 +811,34 @@ mod tests {
             assert!(!valid_email(bad), "{bad:?}");
         }
         assert!(!valid_email(&format!("{}@example.com", "a".repeat(250))));
+    }
+
+    /// What GitHub's comparison with main makes of an "official" build.
+    #[tokio::test]
+    async fn github_confirms_the_commit() {
+        let compare = async |Path((_, _, range)): Path<(String, String, String)>| -> Response {
+            match range.trim_start_matches("main...") {
+                "on" => Json(json!({ "status": "behind" })).into_response(),
+                "tip" => Json(json!({ "status": "identical" })).into_response(),
+                "fork" => Json(json!({ "status": "diverged" })).into_response(),
+                "odd" => Json(json!({})).into_response(),
+                "gone" => StatusCode::NOT_FOUND.into_response(),
+                _ => StatusCode::FORBIDDEN.into_response(),
+            }
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let router = Router::new().route("/repos/{owner}/{repo}/compare/{range}", get(compare));
+        tokio::spawn(axum::serve(listener, router).into_future());
+        let http = reqwest::Client::new();
+        for (commit, want) in
+            [("on", "official"), ("tip", "official"), ("fork", "modified"), ("gone", "modified"), ("odd", "unknown"), ("limit", "unknown")]
+        {
+            assert_eq!(confirm(&http, &base, "official", commit).await, want, "{commit}");
+        }
+        // Nothing to confirm otherwise, and nothing is asked.
+        assert_eq!(confirm(&http, "http://127.0.0.1:9", "modified", "on").await, "modified");
+        assert_eq!(confirm(&http, "http://127.0.0.1:9", "unknown", "").await, "unknown");
+        assert_eq!(confirm(&http, "http://127.0.0.1:9", "official", "on").await, "unknown", "GitHub out of reach");
     }
 }

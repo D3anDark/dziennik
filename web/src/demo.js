@@ -412,8 +412,9 @@ export function answer(path, init = {}) {
   const query = new URLSearchParams(q);
   if (route === 'login' && method === 'POST') return ((logged = true), reply(200, ME));
   if (route === 'logout') return ((logged = false), reply(204));
+  if (route === 'about') return reply(200, { operator: '', build: 'official', commit: '' });
   if (!logged) return reply(401, { error: 'unauthorized' });
-  if (route === 'me') return reply(200, ME);
+  if (route === 'me') return method === 'DELETE' ? ((logged = false), reply(204)) : reply(200, ME);
   if (route === 'push') return method === 'GET' ? reply(200, { feeds: ME.accounts.map((a) => ({ login: a.login, checked: NOW - 300, error: '' })) }) : reply(204);
   if (route === 'admin/emails' && method === 'POST') {
     const email = String(body.email ?? '').trim().toLowerCase();

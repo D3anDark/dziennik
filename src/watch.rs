@@ -116,7 +116,7 @@ fn summary(changes: &[Change], absences: &HashSet<String>) -> Option<(String, &'
 
 /// One Synergia call for one student. Errors are the short codes the frontend already translates.
 async fn call(app: &App, email: &str, login: &str, req: impl Fn(&str) -> RequestBuilder) -> Result<reqwest::Response, String> {
-    app.send(email, login, req).await.map_err(|e| e.1.to_string())
+    app.send(email, None, login, req).await.map_err(|e| e.1.to_string())
 }
 
 async fn json_body(mut res: reqwest::Response) -> Result<Value, String> {
@@ -236,12 +236,15 @@ async fn check(app: &App, email: &str, login: &str, name: &str, register: &str, 
 /// One pass over every watched user. `all` is the timed round; an early one (a new device, a new login) only
 /// touches feeds that are not running: unregistered, or stopped on an expired Librus session.
 async fn round(app: &App, all: bool) {
+    if let Err(e) = app.store.purge() {
+        eprintln!("db: {e}");
+    }
     let owners = app.store.watched().unwrap_or_else(|e| {
         eprintln!("db: {e}");
         Vec::new()
     });
     for email in owners.iter().filter(|e| app.is_allowed(e)) {
-        let (Some(tokens), Ok(devices), Ok(feeds)) = (app.store.tokens(email), app.store.devices(email), app.store.feeds(email)) else {
+        let (Some(tokens), Ok(devices), Ok(feeds)) = (app.store.tokens(email, None), app.store.devices(email), app.store.feeds(email)) else {
             continue;
         };
         for account in tokens.accounts.iter().filter(|a| a.access_token.is_some()) {
@@ -395,6 +398,8 @@ mod tests {
             web: Default::default(),
             vapid: Vapid::load(&Vapid::generate().unwrap(), "a@x.pl").unwrap(),
             wake: tokio::sync::Notify::new(),
+            operator: String::new(),
+            build: "official",
         };
         let account = Account { login: "1u".into(), access_token: Some("tok".into()), student_name: Some("Jan Testowy".into()), state: None };
         app.store.put_tokens("a@x.pl", &Tokens { access: "p".into(), refresh: "r".into(), accounts: vec![account] }).unwrap();

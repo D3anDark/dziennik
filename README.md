@@ -47,14 +47,60 @@ wiadomości, posiłki, przedszkola.
 Strona "Powiadomienia" w "Więcej" włącza Web Push na danym urządzeniu (na iPhonie i iPadzie dopiero po dodaniu
 aplikacji do ekranu początkowego). Serwer co 10 minut czyta kanał zmian Librusa bez tokenu push
 (`ChangeRegister` z `sendPush=0`, potem `PushChanges`). Te same zmiany zapisuje jako
-aktywność ucznia (ostatnie 300 wpisów) dla każdego, kto ma ważną sesję albo włączone urządzenie, i wysyła zbiorcze
+aktywność ucznia (ostatnie 300 wpisów) dla każdego, kto ma włączone urządzenie, i wysyła zbiorcze
 powiadomienie w rodzaju "Nowe: oceny (2). Zmienione: oceny.":
 oceny, zachowanie, nieobecności i spóźnienia (bez zwykłych obecności), uwagi, wiadomości, ogłoszenia, zadania domowe,
 terminarz, zmiany w planie. Pomija tematy lekcji i szczęśliwy numerek. Jedno zapytanie na ucznia na rundę, po kolei,
-dla osób z ważną sesją albo włączonym urządzeniem.
+dla osób z włączonym urządzeniem.
 
 Klucz VAPID powstaje przy pierwszym starcie i leży zaszyfrowany w SQLite, bez konfiguracji. Najwyżej 5 urządzeń na
 osobę. Wylogowanie wyłącza powiadomienia na tym urządzeniu. Stan kanału każdego ucznia widać na stronie powiadomień.
+
+## Prywatność i szyfrowanie
+
+Tokeny Librusa każdej sesji leżą w SQLite zaszyfrowane (AES-256-GCM) kluczem wyprowadzonym z ciasteczka tej sesji.
+Baza trzyma tylko skrót ciasteczka, z którego klucza nie da się odtworzyć, więc ani plik bazy, ani kopia zapasowa, ani
+`SECRET_KEY` nie otwierają tokenów bez zalogowanej przeglądarki. Każde urządzenie ma własną kopię.
+
+Wyjątek to powiadomienia: serwer musi czytać Librusa, gdy aplikacja jest zamknięta. Włączenie powiadomień przenosi
+tokeny tej sesji do kopii szyfrowanej `SECRET_KEY`, którą serwer otwiera sam; wtedy powstają też urządzenia, stan kanałów
+i aktywność. Wyłączenie powiadomień na ostatnim urządzeniu przenosi tokeny z powrotem do sesji i kasuje kopię oraz
+aktywność. Inne sesje, które z tej kopii korzystały, logują się ponownie. Po aktualizacji do tej wersji osoby bez
+powiadomień logują się raz ponownie, bo ich dotychczasowa kopia jest kasowana.
+
+Czego to nie chroni: hasło przy logowaniu i dane z dziennika przechodzą przez serwer w chwili użycia, a adres e-mail,
+lista dostępu i nazwy uczniów w kopii dla powiadomień są czytelne dla serwera. Kto ma władzę nad serwerem, może
+podmienić kod i przechwycić dane w locie. Szyfrowanie chroni przed wyciekiem bazy i ciekawskim wglądem w pliki, nie
+przed nieuczciwym operatorem.
+
+Aplikacja pokazuje informację z art. 13 RODO przed logowaniem ("Prywatność i RODO") i w "Więcej", "Prywatność", z
+danymi operatora ze zmiennej `OPERATOR`. Przycisk "Usuń moje dane" w "Więcej" (`DELETE /api/me`) kasuje wszystko, co
+serwer trzyma o tej osobie, na każdym urządzeniu, poza adresem na liście dostępu.
+
+## Zgodność z oficjalnym repozytorium
+
+Przy kompilacji `build.rs` pyta git, czy drzewo jest czyste (bez zmian i nowych plików; każdy śledzony plik ma ten
+sam skrót co w commicie) i czy commit leży na gałęzi oficjalnego repozytorium (`github.com/D3anDark/dziennik`,
+`src/provenance.rs`). Przy starcie serwer pyta jeszcze GitHub (`api.github.com`, bez danych użytkowników), czy commit
+leży na `main`: lokalne gałęzie zdalne da się przestawić dowolnie, a odpowiedzi GitHuba nie. Wynik (`official`,
+`modified` albo `unknown`, gdy gita albo GitHuba nie da się zapytać) i commit podaje `GET /api/about` oraz log startu.
+Gdy wynik nie jest `official`, ostrzeżenie pokazuje sam serwer, niezależnie od frontendu: do każdej strony HTML,
+którą serwuje z `WEB_DIR` (nasz frontend albo dowolny inny), dopisuje skrypt `/api/warning.js`, a ten otwiera okno
+modalne: "Hostowana wersja serwera jest niezgodna z tą na oficjalnym repozytorium. Jeżeli nie ufasz osobie hostującej
+ten projekt, nie podawaj swojego loginu i hasła." Przy wersji oficjalnej skrypt jest pusty. Serwer nie startuje, gdy
+wynik `build.rs` wygląda na podmieniony albo gdy skrypt ostrzeżenia (`src/warning.js`, wkompilowany w serwer) go nie
+pokazuje.
+
+To sygnał, nie zabezpieczenie. Kontrole są rozproszone, więc wyciszenie ostrzeżenia wymaga zmian w kilku miejscach
+kodu, ale serwer mówi sam o sobie: nieuczciwy operator usunie je wszystkie, a z przeglądarki nie da się sprawdzić,
+jaki kod naprawdę działa na serwerze. Nie wykryje też oficjalnego serwera za podstawionym reverse proxy, które widzi
+hasła przed serwerem. Okno trafia tylko do stron serwowanych przez ten serwer: frontend postawiony osobno (np. proxy
+kieruje `/` gdzie indziej, a do serwera tylko `/api`) go nie dostanie, a frontend może je usunąć własnym skryptem.
+Dlatego aplikacja nigdy nie pokazuje plakietki "wersja oficjalna": brak ostrzeżenia niczego nie dowodzi. Mechanizm
+łapie uczciwe zmiany, np. fork albo lokalne poprawki. Gałęzie zdalne w `build.rs` są tak świeże jak ostatni `git
+fetch`: commit wypchnięty później czyta się jako `modified` do następnego pobrania. GitHub jest pytany raz, przy
+starcie: gdy wtedy nie odpowie, wynik zostaje `unknown` do restartu. Obraz Dockera kopiuje całe drzewo z `.git`, więc
+instalacja z `install.sh` po `git pull` daje `official`.
 
 ## Dostęp
 
@@ -120,13 +166,15 @@ cargo run --release
 Zamiast podawać zmienne w wierszu poleceń: `cp .env.example .env`, uzupełnij, potem
 `set -a; . ./.env; set +a; cargo run --release`.
 
-`SECRET_KEY` trzymaj stały: zmiana unieważnia zapisane tokeny (wszyscy logują się ponownie).
+`SECRET_KEY` trzymaj stały: zmiana unieważnia kopie tokenów dla powiadomień i klucz VAPID (osoby z powiadomieniami
+logują się ponownie i włączają je jeszcze raz). Tokenów w sesjach nie dotyka.
 
 | Zmienna | Domyślnie | Znaczenie |
 |---|---|---|
 | `ADMIN_EMAILS` | (wymagane to lub `ALLOWED_EMAILS`) | e-maile kont LIBRUS administratorów, po przecinku: mają dostęp i zarządzają listą w aplikacji |
 | `ALLOWED_EMAILS` | (puste) | dodatkowe e-maile z dostępem na stałe, po przecinku |
-| `SECRET_KEY` | (wymagane) | 64 znaki hex, klucz szyfrowania tokenów |
+| `SECRET_KEY` | (wymagane) | 64 znaki hex, klucz szyfrowania kopii tokenów dla powiadomień i klucza VAPID |
+| `OPERATOR` | (puste) | imię i nazwisko (albo nazwa) oraz kontakt operatora, np. `Jan Kowalski, jan@example.com`: administrator danych w informacji RODO |
 | `DB` | `dziennik.db` | plik SQLite |
 | `WEB_DIR` | `web/dist` | zbudowany frontend |
 | `BIND` | `127.0.0.1:8080` | adres nasłuchu |
@@ -189,9 +237,12 @@ To nie jest opinia prawna.
   Twoim imieniu. Regulaminy Librusa dalej Cię obowiązują. Librus może w każdej chwili zmienić albo zablokować dostęp,
   także do konta. Hasło nie jest zapisywane, ale przechodzi przez serwer, na którym stoi aplikacja: korzystaj tylko
   z instancji, której operatorowi ufasz.
-- **Operator odpowiada za dane.** Kto uruchamia serwer dla innych osób, przetwarza ich dane osobowe (adres e-mail,
-  zaszyfrowane tokeny, historia zmian w ocenach i frekwencji) i sam odpowiada za obowiązki z RODO oraz za zgodę tych
-  osób, a przy niepełnoletnich także ich rodziców.
+- **Operator odpowiada za dane.** Kto uruchamia serwer dla innych osób niż własna rodzina, przetwarza ich dane osobowe
+  (adres e-mail, zaszyfrowane tokeny, przy powiadomieniach historia zmian) i jest ich administratorem w rozumieniu RODO.
+  Aplikacja daje informację z art. 13 i samodzielne usuwanie danych; resztę robi operator: ustawia `OPERATOR`, zawiera
+  umowę powierzenia z firmą hostingową (art. 28), prowadzi rejestr czynności przetwarzania, jeśli go dotyczy (art. 30),
+  zgłasza naruszenia do UODO w 72 godziny (art. 33) i odpowiada na pozostałe żądania (dostęp, sprostowanie,
+  przeniesienie).
 - **Bez obciążania Librusa.** Aplikacja jest przeznaczona dla małej, zamkniętej grupy. Nie używaj jej do masowego
   pobierania danych ani do udostępniania cudzych kont.
 - **Bez gwarancji.** Oprogramowanie jest dostarczane "tak jak jest", na warunkach z pliku [LICENSE](LICENSE).

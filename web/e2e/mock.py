@@ -363,6 +363,8 @@ class H(SimpleHTTPRequestHandler):
             n = int(self.headers.get("content-length") or 0)
             STATE["log"][-1] += " " + self.rfile.read(n).decode()
             self.send_response(204); self.end_headers(); return
+        if p == "/api/me" and STATE["logged"]:
+            STATE["logged"] = False; self.send_response(204); self.end_headers(); return
         if not STATE["logged"] or not p.startswith("/api/admin/emails/"):
             return self.send(401, {"error": "unauthorized"})
         ACCESS["emails"] = [e for e in ACCESS["emails"] if e["email"] != unquote(p.rsplit("/", 1)[1])]
@@ -388,6 +390,8 @@ class H(SimpleHTTPRequestHandler):
         STATE["log"].append("GET " + self.path)
         if STATE.get("down") and u.path.startswith("/api/s/"):
             return self.send(502, {"error": "upstream"})
+        if u.path == "/api/about":
+            return self.send(200, {"operator": "Jan Testowy, jan@example.com", "build": "modified", "commit": "abc"})
         if not STATE["logged"]:
             return self.send(401, {"error": "unauthorized"})
         if u.path == "/api/me":

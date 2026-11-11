@@ -1,6 +1,7 @@
 <script>
   import { post, session, message, clearApiCache, DEMO } from './api.svelte.js';
   import Icon from './Icon.svelte';
+  import Privacy from './Privacy.svelte';
 
   let email = $state('');
   let password = $state('');
@@ -8,6 +9,7 @@
   let error = $state('');
   /** Typed on a phone keyboard, a password is easy to get wrong unseen. */
   let shown = $state(false);
+  let privacy = $state(false);
 
   async function submit(e) {
     e.preventDefault();
@@ -29,6 +31,7 @@
 <form class="login card" onsubmit={submit}>
   <h1>Dziennik</h1>
   <p class="muted">Zaloguj się kontem LIBRUS (e-mail i hasło z portal.librus.pl).</p>
+  <p class="muted">Login z&nbsp;cyfr, otrzymany w&nbsp;szkole, tu nie zadziała: najpierw dodaj to konto do swojego konta LIBRUS.</p>
   {#if DEMO}<p class="muted">Wersja demonstracyjna: zadziała dowolny e-mail i&nbsp;hasło.</p>{/if}
   <label>
     E-mail
@@ -48,4 +51,8 @@
   {/if}
   <button class="primary" disabled={busy}>{busy ? 'Logowanie…' : 'Zaloguj'}</button>
   <p class="byline">Aplikacja nieoficjalna, niezwiązana z firmą Librus. Hasło przechodzi przez serwer aplikacji do Librusa i nie jest zapisywane.</p>
+  <details class="byline" bind:open={privacy}>
+    <summary>Prywatność i&nbsp;RODO</summary>
+    {#if privacy}<Privacy />{/if}
+  </details>
 </form>

@@ -30,9 +30,9 @@ pub struct Session {
     used: Instant,
 }
 
-async fn sign_in(app: &App, email: &str, login: &str) -> Result<Client, ApiError> {
+async fn sign_in(app: &App, email: &str, sid: Option<&str>, login: &str) -> Result<Client, ApiError> {
     let url = format!("{}/AutoLoginToken", app.api);
-    let res = app.send(email, login, |t| app.http.post(&url).bearer_auth(t)).await?;
+    let res = app.send(email, sid, login, |t| app.http.post(&url).bearer_auth(t)).await?;
     if !res.status().is_success() {
         eprintln!("librus: AutoLoginToken answered {}", res.status());
         return Err(UPSTREAM);
@@ -67,7 +67,7 @@ fn sessions(app: &App) -> std::sync::MutexGuard<'_, std::collections::HashMap<St
     app.web.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-async fn session(app: &App, email: &str, login: &str, key: &str) -> Result<Client, ApiError> {
+async fn session(app: &App, email: &str, sid: Option<&str>, login: &str, key: &str) -> Result<Client, ApiError> {
     {
         let mut all = sessions(app);
         all.retain(|_, s| s.used.elapsed() < IDLE);
@@ -76,7 +76,7 @@ async fn session(app: &App, email: &str, login: &str, key: &str) -> Result<Clien
             return Ok(s.client.clone());
         }
     }
-    let client = sign_in(app, email, login).await?;
+    let client = sign_in(app, email, sid, login).await?;
     let mut all = sessions(app);
     if all.len() >= MAX_SESSIONS
         && let Some(oldest) = all.iter().min_by_key(|(_, s)| s.used).map(|(k, _)| k.clone())
@@ -114,11 +114,11 @@ fn file_link(res: &reqwest::Response) -> Option<String> {
 
 /// `path` on the website as its signed-in user: the HTML of a page, or for `file` the link the site redirects to.
 /// A session that ended in the meantime is opened again, once.
-pub async fn read(app: &App, email: &str, login: &str, path: &str, file: bool) -> Result<String, ApiError> {
+pub async fn read(app: &App, email: &str, sid: Option<&str>, login: &str, path: &str, file: bool) -> Result<String, ApiError> {
     let key = format!("{email}/{login}");
     let url = format!("{}/{path}", app.synergia);
     for _ in 0..2 {
-        let client = session(app, email, login, &key).await?;
+        let client = session(app, email, sid, login, &key).await?;
         let res = client.get(&url).send().await.map_err(librus::Error::from)?;
         let found = if file { file_link(&res) } else { html(res).await? };
         if let Some(found) = found {
@@ -133,8 +133,8 @@ pub async fn read(app: &App, email: &str, login: &str, path: &str, file: bool) -
 /// Submits a form of the message module as the signed-in user and returns what the site answers with: a page, or
 /// nothing for a redirect. Never repeated, because a second attempt could send a message twice; the caller reads the
 /// form page first, which opens the session this request needs.
-pub async fn post(app: &App, email: &str, login: &str, path: &str, fields: Vec<(String, String)>, multipart: bool) -> Result<String, ApiError> {
-    let client = session(app, email, login, &format!("{email}/{login}")).await?;
+pub async fn post(app: &App, email: &str, sid: Option<&str>, login: &str, path: &str, fields: Vec<(String, String)>, multipart: bool) -> Result<String, ApiError> {
+    let client = session(app, email, sid, login, &format!("{email}/{login}")).await?;
     let req = client.post(format!("{}/{path}", app.synergia));
     let req = if multipart {
         req.multipart(fields.into_iter().fold(Form::new(), |form, (name, value)| form.text(name, value)))
@@ -236,11 +236,13 @@ mod tests {
             web: Default::default(),
             vapid: Vapid::load(&Vapid::generate().unwrap(), "a@x.pl").unwrap(),
             wake: tokio::sync::Notify::new(),
+            operator: String::new(),
+            build: "official",
         };
         let account = Account { login: "1u".into(), access_token: Some("tok".into()), student_name: None, state: None };
         app.store.put_tokens("a@x.pl", &Tokens { access: "p".into(), refresh: "r".into(), accounts: vec![account] }).unwrap();
         let calls = || std::mem::take(&mut *fixture.calls.lock().unwrap());
-        let page = || read(&app, "a@x.pl", "1u", "wiadomosci/5", false);
+        let page = || read(&app, "a@x.pl", None, "1u", "wiadomosci/5", false);
 
         // The first read signs in with a token from the API; the next one reuses the cookies.
         assert!(page().await.unwrap().contains("odebrane"));
@@ -254,13 +256,13 @@ mod tests {
         assert_eq!(calls(), ["GET /wiadomosci/5", "POST /AutoLoginToken", "GET /loguj/token/T2/przenies/wiadomosci", "GET /wiadomosci/5"]);
 
         // An attachment is the keyed link the site redirects to, and only on the files host.
-        let file = |path: &'static str| read(&app, "a@x.pl", "1u", path, true);
+        let file = |path: &'static str| read(&app, "a@x.pl", None, "1u", path, true);
         assert_eq!(file("wiadomosci/pobierz_zalacznik/1/2").await.unwrap(), "https://sandbox.librus.pl/GetFile/key");
         assert!(file("wiadomosci/pobierz_zalacznik/9/9").await.is_err());
         calls();
 
         // Someone else's student has no token here, so no session either.
-        assert!(read(&app, "b@x.pl", "1u", "wiadomosci/5", false).await.is_err());
+        assert!(read(&app, "b@x.pl", None, "1u", "wiadomosci/5", false).await.is_err());
         assert!(calls().is_empty());
 
         forget(&app, "a@x.pl");
@@ -268,15 +270,15 @@ mod tests {
         assert_eq!(calls()[0], "POST /AutoLoginToken");
 
         // The reply form is a page of the module too, though it lacks the marker the folders have.
-        assert!(read(&app, "a@x.pl", "1u", "wiadomosci/3/5/9", false).await.unwrap().contains("odp"));
+        assert!(read(&app, "a@x.pl", None, "1u", "wiadomosci/3/5/9", false).await.unwrap().contains("odp"));
         calls();
 
         // A form goes out once, in the encoding the site's own form uses, on the session the page was read with.
         let fields = |pairs: &[(&str, &str)]| pairs.iter().map(|&(k, v)| (k.to_string(), v.to_string())).collect::<Vec<_>>();
-        let people = post(&app, "a@x.pl", "1u", "getRecipients", fields(&[("typAdresata", "nauczyciel")]), false).await.unwrap();
+        let people = post(&app, "a@x.pl", None, "1u", "getRecipients", fields(&[("typAdresata", "nauczyciel")]), false).await.unwrap();
         assert!(people.contains("DoKogo[]"));
         let message = fields(&[("temat", "Zażółć"), ("DoKogo[]", "7")]);
-        assert_eq!(post(&app, "a@x.pl", "1u", "wiadomosci/5", message.clone(), true).await.unwrap(), "", "a redirect has no page");
+        assert_eq!(post(&app, "a@x.pl", None, "1u", "wiadomosci/5", message.clone(), true).await.unwrap(), "", "a redirect has no page");
         assert_eq!(calls(), ["POST /getRecipients", "POST /wiadomosci/5"]);
         let posted = std::mem::take(&mut *fixture.posted.lock().unwrap());
         assert_eq!(posted[0], "application/x-www-form-urlencoded typAdresata=nauczyciel");
@@ -285,7 +287,7 @@ mod tests {
 
         // The site refuses the form: it is not sent a second time, with or without a new session.
         *fixture.live.lock().unwrap() = 0;
-        assert!(post(&app, "a@x.pl", "1u", "wiadomosci/5", message, true).await.is_err());
+        assert!(post(&app, "a@x.pl", None, "1u", "wiadomosci/5", message, true).await.is_err());
         assert_eq!(calls(), ["POST /wiadomosci/5"]);
     }
 

@@ -61,6 +61,8 @@ async function cacheFirst(event) {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
+  // The server's build warning (main.rs) is read live: a stale copy could hide it.
+  if (url.pathname === '/api/warning.js') return;
   if (url.pathname.startsWith('/api/')) event.respondWith(networkFirst(event, API));
   else if (url.pathname.startsWith('/assets/')) event.respondWith(cacheFirst(event));
   else event.respondWith(networkFirst(event, SHELL));

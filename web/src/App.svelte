@@ -1,5 +1,5 @@
 <script>
-  import { api, post, session, net, clock, lookup, clearApiCache, inbox, update, drafts, DEMO } from './api.svelte.js';
+  import { api, post, session, net, clock, lookup, clearApiCache, inbox, update, drafts, message, DEMO } from './api.svelte.js';
   import { tick } from 'svelte';
   import { refreshUnread } from './webmail.js';
   import { initials, fmtUnix } from './util.js';
@@ -21,6 +21,7 @@
   import Push from './Push.svelte';
   import Activity from './Activity.svelte';
   import Install from './Install.svelte';
+  import Privacy from './Privacy.svelte';
   import { sync as syncPush, disable as disablePush } from './push.js';
 
   const PAGES = {
@@ -40,6 +41,7 @@
     // `global` pages are about the signed-in person, not about one student.
     powiadomienia: { label: 'Powiadomienia', icon: 'bell', view: Push, global: true },
     dostep: { label: 'Dostęp do aplikacji', icon: 'key', view: Access, global: true, admin: true },
+    prywatnosc: { label: 'Prywatność', icon: 'eye', view: Privacy, global: true },
   };
   const TABS = ['start', 'oceny', 'plan', 'wiadomosci'];
   const visible = (p) => Object.hasOwn(PAGES, p) && (!PAGES[p].admin || Boolean(session.me?.admin));
@@ -189,6 +191,23 @@
     await clearApiCache();
     session.me = null;
   }
+
+  let forgetError = $state('');
+
+  /** RODO art. 17: everything the server keeps about this person goes, on every device. */
+  async function forget() {
+    if (!confirm('Usunąć z serwera wszystko, co o Tobie trzyma, i wylogować Cię na każdym urządzeniu?')) return;
+    forgetError = '';
+    await disablePush().catch(() => {});
+    try {
+      await api('me', { method: 'DELETE' });
+    } catch (e) {
+      forgetError = message(e);
+      return;
+    }
+    await clearApiCache();
+    session.me = null;
+  }
 </script>
 
 {#if session.me === undefined}
@@ -293,6 +312,8 @@
           <Install />
           <p class="center muted">Zalogowano jako {session.me.email}</p>
           <button class="secondary wide" onclick={logout}><Icon name="logout" size={20} />Wyloguj</button>
+          {#if forgetError}<p class="error" role="alert">{forgetError}</p>{/if}
+          <button class="secondary wide" onclick={forget}><Icon name="close" size={20} />Usuń moje dane</button>
         {:else if PAGES[route.page].global}
           <View />
         {:else if !accounts.length}

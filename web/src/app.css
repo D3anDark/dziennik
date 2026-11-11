@@ -1039,6 +1039,18 @@ section.card.today > h2 {
   text-wrap: pretty;
 }
 
+/* The privacy notice: short paragraphs, on the login card and as a page of its own. */
+.privacy {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  text-wrap: pretty;
+}
+
+.privacy p {
+  margin: 0;
+}
+
 /* The password field with its show button inside the right edge. */
 .reveal {
   position: relative;

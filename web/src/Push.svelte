@@ -59,7 +59,9 @@
   <p class="byline">
     <!-- &nbsp; after one-letter words: Polish leaves none at a line's end. -->
     Powiadomienia o nowych ocenach, nieobecnościach, uwagach, wiadomościach, ogłoszeniach oraz zmianach w&nbsp;planie
-    i&nbsp;terminarzu. Serwer pyta Librusa o&nbsp;nowości co 10 minut.
+    i&nbsp;terminarzu. Serwer pyta Librusa o&nbsp;nowości co 10 minut. Żeby to robić, gdy aplikacja jest zamknięta,
+    trzyma wtedy kopię Twojego dostępu do Librusa, którą otwiera sam, i&nbsp;historię zmian. Wyłączenie powiadomień na
+    ostatnim urządzeniu usuwa jedno i&nbsp;drugie.
   </p>
 </section>
 
