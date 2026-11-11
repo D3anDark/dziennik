@@ -1,6 +1,6 @@
 <script>
   import { tick } from 'svelte';
-  import { session, message, install, byHand, DEMO } from './api.svelte.js';
+  import { session, message, install, byHand, android, DEMO } from './api.svelte.js';
   import { supported, current, enable } from './push.js';
   import Icon from './Icon.svelte';
   import Install from './Install.svelte';
@@ -26,7 +26,7 @@
       at: ['.side-foot .nav-row', '.tabs a[href="#/wiecej"]', null],
       title: 'Zainstaluj aplikację',
       text: 'Będzie na ekranie jak każda inna aplikacja, bez paska przeglądarki. Na iPhonie i\u00a0iPadzie dopiero wtedy działają powiadomienia. Później znajdziesz to tutaj.',
-      when: () => Boolean(install.event) || byHand,
+      when: () => Boolean(install.event) || byHand || android,
       action: 'install',
     },
     {

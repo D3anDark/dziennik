@@ -17,7 +17,7 @@ Widoki: start (wiersz nowych wiadomości i ocen z linkami, plan dnia, ostatnie o
 usunięte oceny, wpisy frekwencji, uwagi, wiadomości, terminy, zmiany planu), oceny ze średnimi i komentarzami (zwykłe,
 punktowe, tekstowe i opisowe: `Grades`, `PointGrades`, `TextGrades`, `DescriptiveGrades`, `DescriptiveTextGrades`,
 `DescriptiveGrades/Text`),
-plan lekcji na dzień albo tydzień (z opisem zastępstw i przeniesień), frekwencja z procentem i osobnym oznaczeniem nieobecności
+plan lekcji na dzień albo tydzień (z opisem zastępstw i przeniesień, przerwami i sprawdzianami z terminarza), frekwencja z procentem i osobnym oznaczeniem nieobecności
 nieusprawiedliwionych, usprawiedliwionych, spóźnień i zwolnień (liczniki, przedmioty, filtr wpisów), terminarz,
 zadania domowe (najpierw do zrobienia, najbliższy termin na górze; z oznaczeniem "po terminie"), tematy lekcji,
 wiadomości, ogłoszenia, uwagi, zachowanie, klasa i nauczyciele (klasa, wychowawca, szkoła).
@@ -50,8 +50,17 @@ aplikacji do ekranu początkowego). Serwer co 10 minut czyta kanał zmian Librus
 aktywność ucznia (ostatnie 300 wpisów) dla każdego, kto ma włączone urządzenie, i wysyła zbiorcze
 powiadomienie w rodzaju "Nowe: oceny (2). Zmienione: oceny.":
 oceny, zachowanie, nieobecności i spóźnienia (bez zwykłych obecności), uwagi, wiadomości, ogłoszenia, zadania domowe,
-terminarz, zmiany w planie. Pomija tematy lekcji i szczęśliwy numerek. Jedno zapytanie na ucznia na rundę, po kolei,
-dla osób z włączonym urządzeniem.
+terminarz, zmiany w planie. Pomija tematy lekcji. Szczęśliwy numerek idzie osobno ("Szczęśliwy numerek na jutro: 13"),
+gdy kanał zgłosi jego zmianę. Jedno zapytanie na ucznia na rundę, po kolei, dla osób z włączonym urządzeniem.
+
+Przerwy (`src/breaks.rs`, na nowym urządzeniu wyłączone, włącza się je na stronie powiadomień): na koniec każdej lekcji
+powiadomienie "Przerwa 10 min. Następna: Fizyka, sala 26, 08:55."
+("Okienko", gdy wypada lekcja). Plan dnia serwer czyta w pierwszej rundzie danego dnia i po zmianie planu w kanale
+(`Timetables` i `Classrooms`, dwa zapytania), trzyma go tylko w pamięci, a wysyła o pełnej minucie według czasu
+polskiego, z TTL 5 minut i jednym tagiem, więc kolejna przerwa zastępuje poprzednią.
+
+Każde urządzenie wyłącza na stronie powiadomień wybrane rodzaje (oceny, zachowanie, frekwencja, uwagi, wiadomości,
+ogłoszenia, zadania, terminarz, plan, numerek, przerwy); wybór leży przy urządzeniu (`devices.off`, `PUT /api/push`).
 
 Klucz VAPID powstaje przy pierwszym starcie i leży zaszyfrowany w SQLite, bez konfiguracji. Najwyżej 5 urządzeń na
 osobę. Wylogowanie wyłącza powiadomienia na tym urządzeniu. Stan kanału każdego ucznia widać na stronie powiadomień.
@@ -69,7 +78,8 @@ aktywność. Inne sesje, które z tej kopii korzystały, logują się ponownie. 
 powiadomień logują się raz ponownie, bo ich dotychczasowa kopia jest kasowana.
 
 Czego to nie chroni: hasło przy logowaniu i dane z dziennika przechodzą przez serwer w chwili użycia, a adres e-mail,
-lista dostępu i nazwy uczniów w kopii dla powiadomień są czytelne dla serwera. Kto ma władzę nad serwerem, może
+lista dostępu i nazwy uczniów w kopii dla powiadomień są czytelne dla serwera, a dzisiejsze lekcje dla powiadomień
+o przerwach leżą w pamięci procesu do następnego dnia albo wyłączenia powiadomień. Kto ma władzę nad serwerem, może
 podmienić kod i przechwycić dane w locie. Szyfrowanie chroni przed wyciekiem bazy i ciekawskim wglądem w pliki, nie
 przed nieuczciwym operatorem.
 
@@ -123,9 +133,18 @@ Przy pisaniu wiadomości na telefonie zakładek nie ma, żeby pole i przycisk wy
 7 dni ma niebieską kropkę, dopóki nie zostanie otwarta na tym urządzeniu (`seen-grades/<login>` w `localStorage`); start
 liczy jako nowe tylko takie oceny. Zadania, ogłoszenia i uwagi to wiersze w jednej karcie, jak wiadomości.
 Na szerokim ekranie każdy widok zaczyna się przy tej samej krawędzi: listy, wiadomości, formularze i oceny mają
-szerokość do czytania (760 px), start i tydzień planu zajmują całą stronę. W tygodniu lekcja o tym samym numerze
-stoi w jednym wierszu we wszystkich dniach (subgrid). Notatka nauczyciela do zastępstwa ma kolor tekstu, opis zmiany
-jest szary. Ostatnie oceny na starcie są ułożone i datowane po dniu wpisania, ocena semestralna albo roczna ma przy przedmiocie dopisek. W wąskich kolumnach tygodnia znaczniki lekcji (odwołana, zastępstwo, następna) mają własną linię pod przedmiotem, a nagłówek dnia ma tę samą kropkę co pasek dni. W wierszu przedmiotu oceny idą od najstarszej. Usunięty wpis w aktywności ma przekreśloną ikonę swojego widoku. Oceny "zwolniony" i "nieklasyfikowany" mają skrót
+szerokość do czytania (760 px), start i tydzień planu zajmują całą stronę. Tydzień to siatka godzin, kolumna na dzień: lekcja zaczyna się na swojej
+godzinie i jest tak wysoka, jak długo trwa, więc przerwy i okienka widać jako odstęp; lekcje o tej samej porze (grupy,
+odwołana i zastępcza) stoją obok siebie. Na telefonie blok ma przedmiot i salę, od 900 px także godziny i nauczyciela;
+czytnik ekranu słyszy całość, a dotknięcie otwiera ten dzień. Trwająca lekcja ma obwódkę i odliczanie, dzisiejszą
+kolumnę przecina linia bieżącej godziny. Lekcja to blok w odcieniu swojego przedmiotu (odcień z id przedmiotu, poza
+czerwienią, która znaczy odwołanie); w widoku dnia między blokami stoi długość przerwy, a przerwa od 15 minut i okienko
+są wyróżnione. Sprawdzian albo kartkówka z terminarza stoi na lekcji swojego przedmiotu tego dnia: tej o podanym numerze albo
+godzinie, inaczej najbliższej numerem (w klasie łączonej nauczyciel wpisuje jeden termin całej klasie i numer lekcji bywa
+cudzy). Wpis z przedmiotu, którego tego dnia nie ma w planie, należy do innej grupy i zostaje tylko w terminarzu. Plan
+pobiera do tego terminarz miesięcy, w których leży tydzień. Zastępstwo przekreśla zastąpiony przedmiot i nauczyciela
+przed obecnymi (czytnik ekranu słyszy "Biologia, teraz Chemia"). Notatka nauczyciela do zastępstwa ma kolor tekstu, opis
+przeniesienia jest szary. Ostatnie oceny na starcie są ułożone i datowane po dniu wpisania, ocena semestralna albo roczna ma przy przedmiocie dopisek. W tygodniu zastępstwo ma kółko, a sprawdzian etykietę pod przedmiotem; nagłówek dnia ma tę samą kropkę co pasek dni. W wierszu przedmiotu oceny idą od najstarszej. Usunięty wpis w aktywności ma przekreśloną ikonę swojego widoku. Oceny "zwolniony" i "nieklasyfikowany" mają skrót
 "zw" i "nkl" (pełne słowo w `title`). Skala 1-6 idzie od czerwieni przez pomarańcz, bursztyn i limonkę do zieleni;
 ocena końcowa jest w pełnym kolorze, spoza skali ma obwódkę. Rok przy dacie pada tylko poza bieżącym rokiem szkolnym.
 W planie dzień z odwołaną lekcją ma czerwoną kropkę, dzień z inną zmianą pusty pierścień. Ocena punktowa ma swoje maksimum
@@ -138,9 +157,11 @@ Tydzień w planie i miesiąc w terminarzu zmienia się też przesunięciem palce
 palcem 1:1, krótki ruch wraca, długi albo szybki przewraca stronę. Przyciski zostają dla myszy i klawiatury.
 
 Plan na starcie i widok planu idą za zegarem urządzenia: po ostatniej dzisiejszej lekcji pokazują następny dzień
-z lekcjami (w piątek po południu kolejny tydzień). Widok dnia albo tygodnia zostaje zapamiętany na urządzeniu; bez
+z lekcjami (w piątek po południu kolejny tydzień). Trwająca lekcja ma znacznik "do końca N min", liczony co minutę.
+Widok dnia albo tygodnia zostaje zapamiętany na urządzeniu; bez
 wyboru telefon pokazuje dzień, szeroki ekran tydzień. Przycisk "Zainstaluj aplikację" jest w "Więcej" i w pasku
-bocznym, gdy przeglądarka pozwala stronie o to zapytać (Chromium); na iOS zamiast niego jest wskazówka.
+bocznym, gdy przeglądarka pozwala stronie o to zapytać (Chromium); na iOS zamiast niego jest wskazówka. Na Androidzie
+"Więcej" i przewodnik radzą instalować z Google Chrome, bo nie wszystkie tamtejsze przeglądarki dobrze obsługują PWA.
 
 Widok otwarty ponownie od razu pokazuje ostatnią odpowiedź, a świeżą podmienia, gdy przyjdzie (w pamięci do 40
 odpowiedzi, przy zamknięciu aplikacji zapisane w IndexedDB tylko dla tej samej wersji, czyszczone przy wylogowaniu).

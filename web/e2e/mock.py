@@ -1,4 +1,4 @@
-import datetime as dt, json, sys
+import datetime as dt, json, re, sys
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs, unquote
@@ -9,7 +9,8 @@ ME = {"email": "rodzic@example.com", "admin": True, "push": "BAAA" + "A" * 83, "
     {"login": "1001u", "name": "Jan Testowy", "state": "active"},
     {"login": "2002u", "name": "Ala Testowa", "state": "active"}]}
 ACCESS = {"fixed": ["rodzic@example.com"], "emails": [{"email": "ala@example.com", "added": 1762675200, "active": True}]}
-FEEDS = {"feeds": [{"login": "1001u", "checked": 1762675200, "error": ""}, {"login": "2002u", "checked": 1762675200, "error": "relogin"}]}
+FEEDS = {"feeds": [{"login": "1001u", "checked": 1762675200, "error": ""}, {"login": "2002u", "checked": 1762675200, "error": "relogin"}],
+         "devices": [{"endpoint": "https://fcm.googleapis.com/fcm/send/e2e", "off": ["przerwy"]}]}
 # The second student: no Mobilne Dodatki, and a school that also grades with points, words and descriptions.
 OTHER = {
     "Me": {"Me": {"Account": {"Login": "2002u", "GroupId": 5, "IsPremium": False, "IsPremiumDemo": False}}},
@@ -62,7 +63,7 @@ S = {
         {"Id": 4, "Grade": "5", "Date": "2026-10-10", "Semester": 1, "Subject": {"Id": "5"}, "Category": {"Id": 3}},
         {"Id": 5, "Grade": "2", "Date": "2026-10-11", "Semester": 1, "Subject": {"Id": "404"}, "Category": {"Id": 1}},
         {"Id": 6, "Grade": "4", "Date": "2026-10-12", "Semester": 1, "Subject": {"Id": "405"}, "Category": {"Id": 1}}]},
-    "Subjects": {"Subjects": [{"Id": 5, "Name": "Matematyka"}, {"Id": "7", "Name": "Język polski"}]},
+    "Subjects": {"Subjects": [{"Id": 5, "Name": "Matematyka"}, {"Id": "7", "Name": "Język polski"}, {"Id": 11, "Name": "Statystyka"}]},
     "Me": {"Me": {"Account": {"Login": "1001u", "GroupId": 8, "IsPremium": True}}},
     "Grades/Categories": {"Categories": [
         {"Id": 1, "Name": "Sprawdzian", "Weight": 3, "CountToTheAverage": True},
@@ -242,7 +243,7 @@ def users_by(ids):
 def calendar(q):
     y, m = int(q["year"][0]), int(q["month"][0])
     inm = lambda d: dt.date.fromisoformat(d).year == y and dt.date.fromisoformat(d).month == m
-    c = {"HomeWorks": [{"Id": 1}] if inm(ahead(2)) else [],
+    c = {"HomeWorks": [{"Id": i} for i, n in ((5, -1), (1, 2)) if inm(ahead(n))],
          "ClassFreeDays": [{"Id": 2}] if inm(ahead(5)) else [],
          "TeacherFreeDays": [{"Id": 3}] if inm(ahead(2)) else [],
          "SchoolFreeDays": [], "ParentTeacherConferences": [{"Id": 4}] if inm(ahead(20)) else []}
@@ -251,9 +252,14 @@ def calendar(q):
 def dynamic(rest, q):
     if rest == "Calendars/7":
         return calendar(q)
-    if rest == "HomeWorks/1":
-        return {"HomeWork": {"Id": 1, "Date": ahead(2), "Category": {"Id": 1}, "Subject": {"Id": 5},
-                             "Content": "Funkcje liniowe", "LessonNo": "3", "CreatedBy": {"Id": 1}}}
+    if re.fullmatch(r"HomeWorks/[\d,]+", rest):
+        # 1: Matematyka given at lesson 3, Matematyka being lesson 1 that day. 5: a test of a subject not in this plan,
+        # another group's in a class split into groups.
+        hw = {"1": {"Id": 1, "Date": ahead(2), "Category": {"Id": 1}, "Subject": {"Id": 5},
+                    "Content": "Funkcje liniowe", "LessonNo": "3", "CreatedBy": {"Id": 1}},
+              "5": {"Id": 5, "Date": ahead(-1), "Category": {"Id": 1}, "Subject": {"Id": 11}, "LessonNo": "1"}}
+        found = [hw[i] for i in rest[10:].split(",") if i in hw]
+        return {"HomeWork": found[0]} if len(found) == 1 else {"HomeWorks": found}
     if rest == "Calendars/ClassFreeDays/2":
         return {"ClassFreeDays": [{"Id": 2, "DateFrom": ahead(5), "DateTo": ahead(6), "Type": {"Id": 1}, "Name": "Krakow"}]}
     if rest == "Calendars/TeacherFreeDays/3":
@@ -356,6 +362,13 @@ class H(SimpleHTTPRequestHandler):
             SENT["15"] = body
             return self.send(200, {"Message": {"Id": 15}})
         self.send(404, {"error": "not_found"})
+    def do_PUT(self):
+        p = urlsplit(self.path).path
+        n = int(self.headers.get("content-length") or 0)
+        STATE["log"].append("PUT " + p + " " + self.rfile.read(n).decode())
+        if p == "/api/push" and STATE["logged"]:
+            self.send_response(204); self.end_headers(); return
+        self.send(401, {"error": "unauthorized"})
     def do_DELETE(self):
         p = urlsplit(self.path).path
         STATE["log"].append("DELETE " + p)

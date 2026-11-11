@@ -68,7 +68,8 @@ self.addEventListener('fetch', (event) => {
   else event.respondWith(networkFirst(event, SHELL));
 });
 
-// A push is { title, body, url }, encrypted by the server. Browsers require a visible notification for every one.
+// A push is { title, body, url, tag? }, encrypted by the server. Browsers require a visible notification for every one;
+// one with the tag of a shown one replaces it, and still sounds.
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -77,7 +78,7 @@ self.addEventListener('push', (event) => {
     // not ours: still has to show something
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Dziennik', { body: data.body || '', icon: '/icon-192.png', data: { url: data.url } }),
+    self.registration.showNotification(data.title || 'Dziennik', { body: data.body || '', icon: '/icon-192.png', tag: data.tag, renotify: Boolean(data.tag), data: { url: data.url } }),
   );
 });
 

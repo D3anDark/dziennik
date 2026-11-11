@@ -1,3 +1,4 @@
+mod breaks;
 mod librus;
 // VULCAN is off: eduVULCAN's terms (ch. II sec. 15) allow only a browser without VULCAN's written consent, and the
 // code has never met a real account. To turn it on: add `httpdate = "1"` to Cargo.toml, uncomment the line below,
@@ -59,6 +60,8 @@ struct App {
     vapid: Vapid,
     /// Asks the notification loop for an early round: a new device or a new login.
     wake: tokio::sync::Notify,
+    /// Today's lessons by (email, login), for break notifications. Only students of watched users (`watch::round`).
+    days: Mutex<HashMap<(String, String), breaks::Day>>,
     /// OPERATOR: name and contact of whoever runs this server, the controller of its data under RODO.
     operator: String,
     /// BUILD_STATE from build.rs, as `confirm` left it at start.
@@ -302,7 +305,14 @@ async fn feeds(State(app): Shared, headers: HeaderMap) -> Result<Json<Value>, Ap
         .into_iter()
         .map(|(login, _, checked, error)| json!({ "login": login, "checked": checked, "error": error }))
         .collect();
-    Ok(Json(json!({ "feeds": feeds })))
+    let devices: Vec<Value> = app
+        .store
+        .devices(&email)
+        .map_err(db_err)?
+        .into_iter()
+        .map(|d| json!({ "endpoint": d.endpoint, "off": d.off.split(',').filter(|g| !g.is_empty()).collect::<Vec<_>>() }))
+        .collect();
+    Ok(Json(json!({ "feeds": feeds, "devices": devices })))
 }
 
 /// What changed for one of the caller's students, newest first, as the change feed reported it.
@@ -318,12 +328,14 @@ async fn activity(State(app): Shared, headers: HeaderMap, Path(login): Path<Stri
     Ok(Json(json!({ "entries": entries })))
 }
 
-/// The fields of `PushSubscription.toJSON()` this server uses.
+/// The fields of `PushSubscription.toJSON()` this server uses, and for a device's settings what it turned off.
 #[derive(Deserialize)]
 struct DeviceBody {
     endpoint: String,
     #[serde(default)]
     keys: DeviceKeys,
+    #[serde(default)]
+    off: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -341,7 +353,7 @@ async fn add_device(State(app): Shared, headers: HeaderMap, Json(b): Json<Device
     let device = Subscription::parse(&b.endpoint, &b.keys.p256dh, &b.keys.auth).ok_or(ApiError(StatusCode::BAD_REQUEST, "bad_device"))?;
     if !app.store.devices(&email).map_err(db_err)?.iter().any(|d| d.endpoint == device.endpoint) {
         let hello = json!({ "title": "Dziennik", "body": "Powiadomienia są włączone na tym urządzeniu.", "url": "/" }).to_string();
-        match push::send(&app.http, &app.vapid, &device, hello.as_bytes()).await {
+        match push::send(&app.http, &app.vapid, &device, hello.as_bytes(), push::TTL).await {
             Ok(Sent::Delivered) => {}
             Ok(Sent::Gone) => return Err(ApiError(StatusCode::BAD_GATEWAY, "push_failed")),
             Err(e) => {
@@ -355,6 +367,19 @@ async fn add_device(State(app): Shared, headers: HeaderMap, Json(b): Json<Device
         app.store.share_tokens(&email, s).map_err(db_err)?;
     }
     app.wake.notify_one();
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Sets the kinds of message (`watch::GROUPS`) the caller's device does not get.
+async fn device_off(State(app): Shared, headers: HeaderMap, Json(b): Json<DeviceBody>) -> Result<StatusCode, ApiError> {
+    let email = app.user(&headers)?;
+    if b.off.iter().any(|g| !watch::GROUPS.contains(&g.as_str())) {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "bad_request"));
+    }
+    let off: Vec<&str> = watch::GROUPS.iter().copied().filter(|g| b.off.iter().any(|o| o == g)).collect();
+    if !app.store.set_off(&email, &b.endpoint, &off.join(",")).map_err(db_err)? {
+        return Err(ApiError(StatusCode::NOT_FOUND, "bad_device"));
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -645,10 +670,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         web: Mutex::default(),
         vapid,
         wake: tokio::sync::Notify::new(),
+        days: Mutex::default(),
         operator: env("OPERATOR", "").trim().to_string(),
         build,
     });
     tokio::spawn(watch::run(app.clone()));
+    tokio::spawn(breaks::run(app.clone()));
 
     let bind = env("BIND", "127.0.0.1:8080");
     let listener = tokio::net::TcpListener::bind(&bind).await?;
@@ -666,7 +693,7 @@ fn router(app: Arc<App>, web_dir: &str) -> Router {
         .route("/api/warning.js", get(warning_js))
         .route("/api/admin/emails", get(access).post(allow))
         .route("/api/admin/emails/{email}", delete(revoke))
-        .route("/api/push", get(feeds).post(add_device).delete(remove_device))
+        .route("/api/push", get(feeds).post(add_device).put(device_off).delete(remove_device))
         .route("/api/activity/{login}", get(activity))
         .route("/api/s/{login}/{*path}", get(proxy).post(write))
         .route("/api/w/{login}/{*path}", get(website).post(website_write))
@@ -709,6 +736,7 @@ mod tests {
             web: Mutex::default(),
             vapid: Vapid::load(&Vapid::generate().unwrap(), "admin@x.pl").unwrap(),
             wake: tokio::sync::Notify::new(),
+            days: Mutex::default(),
             operator: String::new(),
             build: "modified",
         });
@@ -771,6 +799,11 @@ mod tests {
         ] {
             assert_eq!(ask(method, path, "0000", None).await, refused(401, "unauthorized"), "{path}");
         }
+        let off = json!({ "endpoint": "https://fcm.googleapis.com/x", "off": ["przerwy"] });
+        assert_eq!(ask(Method::PUT, "/api/push", "0000", Some(off.clone())).await, refused(401, "unauthorized"));
+        assert_eq!(ask(Method::PUT, "/api/push", &user, Some(off)).await, refused(404, "bad_device"), "not this user's device");
+        let unknown = json!({ "endpoint": "https://fcm.googleapis.com/x", "off": ["wszystko"] });
+        assert_eq!(ask(Method::PUT, "/api/push", &user, Some(unknown)).await, refused(400, "bad_request"));
         for (path, body) in [
             ("/api/s/1u/Messages", json!({})),
             ("/api/w/1u/wiadomosci/5", json!([])),

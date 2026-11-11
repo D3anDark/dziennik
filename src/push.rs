@@ -19,13 +19,15 @@ use serde_json::json;
 const SERVICES: &[&str] = &["fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com"];
 /// One record of the default size (4096) minus the tag and the delimiter, with room to spare.
 const MAX_PAYLOAD: usize = 3000;
-/// How long the push service keeps a message for a device that is offline.
-const TTL_SECS: &str = "86400";
+/// How long the push service keeps a message for a device that is offline, in seconds: a day for news.
+pub const TTL: u32 = 86_400;
 
 pub struct Subscription {
     pub endpoint: String,
     pub p256dh: Vec<u8>,
     pub auth: Vec<u8>,
+    /// The kinds of message (`watch::GROUPS`) turned off on this device, comma separated.
+    pub off: String,
 }
 
 impl Subscription {
@@ -38,7 +40,7 @@ impl Subscription {
         }
         let p256dh = B64.decode(p256dh.trim_end_matches('=')).ok().filter(|k| k.len() == 65 && k[0] == 4)?;
         let auth = B64.decode(auth.trim_end_matches('=')).ok().filter(|a| a.len() == 16)?;
-        Some(Self { endpoint: endpoint.to_string(), p256dh, auth })
+        Some(Self { endpoint: endpoint.to_string(), p256dh, auth, off: String::new() })
     }
 }
 
@@ -118,7 +120,7 @@ pub enum Sent {
 }
 
 /// Hands `payload` to the push service of one subscription. `http` must not follow redirects.
-pub async fn send(http: &Client, vapid: &Vapid, sub: &Subscription, payload: &[u8]) -> Result<Sent, String> {
+pub async fn send(http: &Client, vapid: &Vapid, sub: &Subscription, payload: &[u8], ttl: u32) -> Result<Sent, String> {
     let crypto = |_| "push encryption failed".to_string();
     let url = Url::parse(&sub.endpoint).map_err(|e| e.to_string())?;
     let mut salt = [0u8; 16];
@@ -129,7 +131,7 @@ pub async fn send(http: &Client, vapid: &Vapid, sub: &Subscription, payload: &[u
         .post(url.clone())
         .header(AUTHORIZATION, vapid.authorization(&url).map_err(crypto)?)
         .header(CONTENT_ENCODING, "aes128gcm")
-        .header("TTL", TTL_SECS)
+        .header("TTL", ttl)
         .body(body)
         .send()
         .await
@@ -173,6 +175,7 @@ pub mod tests {
             endpoint: String::new(),
             p256dh: d("BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4"),
             auth: d("BTBZMqHH6r4Tts7J_aSIgg"),
+            off: String::new(),
         };
         let sender = PrivateKey::from_private_key(&ECDH_P256, &d("yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw")).unwrap();
         let salt: [u8; 16] = d("DGv6ra1nlYgDCS1FRnbzlw").try_into().unwrap();

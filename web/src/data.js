@@ -147,22 +147,26 @@ async function loadGrades(login) {
   return { items, averages };
 }
 
-/** What a substitution or a move changed, from the Org* and New* fields of the lesson. */
+/**
+ * What a substitution or a move changed, from the Org* and New* fields of the lesson: `was`, the subject and teacher it
+ * replaced (struck out beside the current ones in the plan), and `text`, the rest in words.
+ */
 function change(l, date, users, subjects) {
   const now = [l.Subject?.Name, l.Teacher && person(l.Teacher)];
   const names = (subject, teacher) =>
-    [subjects.get(String(subject?.Id))?.Name, users.has(String(teacher?.Id)) && person(users.get(String(teacher.Id)))]
-      .filter((x) => x && !now.includes(x))
-      .join(', ');
-  const [was, next] = [names(l.OrgSubject, l.OrgTeacher), names(l.NewSubject, l.NewTeacher)];
-  return [
-    was && `zamiast: ${was}`,
+    [subjects.get(String(subject?.Id))?.Name, users.has(String(teacher?.Id)) && person(users.get(String(teacher.Id)))].map((x) =>
+      x && !now.includes(x) ? x : '',
+    );
+  const [subject, teacher] = names(l.OrgSubject, l.OrgTeacher);
+  const next = names(l.NewSubject, l.NewTeacher).filter(Boolean).join(', ');
+  const text = [
     next && `zmiana na: ${next}`,
     l.OrgDate && l.OrgDate !== date && `przeniesiona z ${fmtDate(l.OrgDate)}`,
     l.NewDate && l.NewDate !== date && `przeniesiona na ${fmtDate(l.NewDate)}`,
   ]
     .filter(Boolean)
     .join('\n');
+  return { was: subject || teacher ? { subject, teacher } : null, text };
 }
 
 /** What a change is called (new, changed, removed) and where it shows, by the resource type of the change feed. */
@@ -218,7 +222,7 @@ export function upcomingDay(days, now = new Date()) {
   return days.find((d) => d.date >= date && ahead(d)) ?? null;
 }
 
-/** One timetable week: [{ date, lessons }] sorted, each lesson with `room`, `change` and the teacher's `note` resolved. */
+/** One timetable week: [{ date, lessons }] sorted, each lesson with `room`, `was`, `change` and the teacher's `note` resolved. */
 export async function week(login, weekStart) {
   const t = (await synergia(login, `Timetables?weekStart=${weekStart}`)).Timetable ?? {};
   const out = Object.keys(t)
@@ -246,7 +250,7 @@ export async function week(login, weekStart) {
   for (const d of out) {
     for (const l of d.lessons) {
       l.room = rooms.get(String(l.Classroom?.Id))?.Symbol ?? '';
-      l.change = change(l, d.date, users, subjects);
+      ({ was: l.was, text: l.change } = change(l, d.date, users, subjects));
       l.note = plain(l.SubstitutionNote);
     }
   }
@@ -291,6 +295,12 @@ export async function monthEvents(login, year, month) {
       title: [cats.get(String(e.Category?.Id))?.Name ?? 'Wydarzenie', subjects.get(String(e.Subject?.Id))?.Name]
         .filter(Boolean)
         .join(': '),
+      // Apart, for the plan: the category on the lesson it is at, by its number or by the hour it starts.
+      category: cats.get(String(e.Category?.Id))?.Name ?? 'Wydarzenie',
+      subject: subjects.get(String(e.Subject?.Id))?.Name ?? '',
+      subjectId: e.Subject?.Id ? String(e.Subject.Id) : '',
+      lesson: Number(e.LessonNo) || 0,
+      from: e.TimeFrom?.slice(0, 5) ?? '',
       detail: plain(e.Content),
       when: e.LessonNo ? `lekcja ${e.LessonNo}` : hours(e.TimeFrom, e.TimeTo),
       who: who(e.CreatedBy),

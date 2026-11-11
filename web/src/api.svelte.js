@@ -28,6 +28,8 @@ addEventListener('appinstalled', () => (install.event = null));
 /** Only Safari on iOS and iPadOS has navigator.standalone; false there means a browser tab, where installing is done by
  *  hand from the share sheet. */
 export const byHand = navigator.standalone === false;
+/** Android in a browser tab. Not every browser there installs a web app well, so the app points to Chrome. */
+export const android = /Android/i.test(navigator.userAgent) && !matchMedia('(display-mode: standalone)').matches;
 
 /** `ready` once sw.js has taken over with a build newer than the one running (main.js). */
 export const update = $state({ ready: false });

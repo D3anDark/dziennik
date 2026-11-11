@@ -236,6 +236,7 @@ mod tests {
             web: Default::default(),
             vapid: Vapid::load(&Vapid::generate().unwrap(), "a@x.pl").unwrap(),
             wake: tokio::sync::Notify::new(),
+            days: Mutex::default(),
             operator: String::new(),
             build: "official",
         };

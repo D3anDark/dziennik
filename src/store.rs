@@ -153,12 +153,15 @@ impl Store {
              CREATE INDEX IF NOT EXISTS activity_student ON activity(email, login, id);",
         )
         .map_err(|e| e.to_string())?;
-        // Added later: the session's own copy of the tokens, sealed with `session_cipher`. NULL when the session uses
-        // the copy kept for notifications.
-        if let Err(e) = db.execute("ALTER TABLE sessions ADD COLUMN tokens BLOB", [])
-            && !e.to_string().contains("duplicate column")
-        {
-            return Err(e.to_string());
+        // Added later: the session's own copy of the tokens, sealed with `session_cipher`, NULL when the session uses
+        // the copy kept for notifications; and what a device turned off (`Subscription::off`), at first the breaks: a
+        // message every lesson is for those who ask for it.
+        for column in ["sessions ADD COLUMN tokens BLOB", "devices ADD COLUMN off TEXT NOT NULL DEFAULT 'przerwy'"] {
+            if let Err(e) = db.execute(&format!("ALTER TABLE {column}"), [])
+                && !e.to_string().contains("duplicate column")
+            {
+                return Err(e.to_string());
+            }
         }
         // Users from before that change, and nobody with notifications on: they sign in again, into their own copy.
         purge(&db).map_err(|e| e.to_string())?;
@@ -399,7 +402,8 @@ impl Store {
         db.execute(
             "INSERT INTO devices(endpoint, email, p256dh, auth, added) VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(endpoint) DO UPDATE SET
-                 email = excluded.email, p256dh = excluded.p256dh, auth = excluded.auth, added = excluded.added",
+                 email = excluded.email, p256dh = excluded.p256dh, auth = excluded.auth, added = excluded.added,
+                 off = CASE WHEN devices.email = excluded.email THEN devices.off ELSE excluded.off END",
             params![s.endpoint, email, s.p256dh, s.auth, now()],
         )?;
         db.execute(
@@ -408,6 +412,12 @@ impl Store {
             params![email, MAX_DEVICES_PER_USER],
         )?;
         Ok(())
+    }
+
+    /// Sets what `email`'s own device at `endpoint` does not want, as `Subscription::off`. False: no such device.
+    pub fn set_off(&self, email: &str, endpoint: &str, off: &str) -> rusqlite::Result<bool> {
+        let n = self.conn().execute("UPDATE devices SET off = ?3 WHERE endpoint = ?1 AND email = ?2", params![endpoint, email, off])?;
+        Ok(n > 0)
     }
 
     /// `email` limits the removal to the caller's own device; the sender passes None for a dead subscription.
@@ -421,8 +431,8 @@ impl Store {
 
     pub fn devices(&self, email: &str) -> rusqlite::Result<Vec<Subscription>> {
         self.conn()
-            .prepare("SELECT endpoint, p256dh, auth FROM devices WHERE email = ?1")?
-            .query_map([email], |r| Ok(Subscription { endpoint: r.get(0)?, p256dh: r.get(1)?, auth: r.get(2)? }))?
+            .prepare("SELECT endpoint, p256dh, auth, off FROM devices WHERE email = ?1")?
+            .query_map([email], |r| Ok(Subscription { endpoint: r.get(0)?, p256dh: r.get(1)?, auth: r.get(2)?, off: r.get(3)? }))?
             .collect()
     }
 
@@ -521,7 +531,7 @@ mod tests {
         let s = Store::open(":memory:", &"ab".repeat(32)).expect("store");
         let t = Tokens { access: "a".into(), refresh: "r".into(), accounts: vec![] };
         let sids: Vec<String> = ["gone@x.pl", "phone@x.pl", "here@x.pl"].iter().map(|e| s.new_session(e, Some(&t)).unwrap()).collect();
-        s.add_device("phone@x.pl", &Subscription { endpoint: "https://push/1".into(), p256dh: vec![4; 65], auth: vec![1; 16] }).unwrap();
+        s.add_device("phone@x.pl", &Subscription { endpoint: "https://push/1".into(), p256dh: vec![4; 65], auth: vec![1; 16], off: String::new() }).unwrap();
         s.share_tokens("phone@x.pl", &sids[1]).unwrap();
         s.conn().execute("UPDATE sessions SET expires = 0 WHERE email != 'here@x.pl'", []).unwrap();
 
@@ -549,7 +559,7 @@ mod tests {
         assert_eq!(s.tokens("a@x.pl", Some(&sid)).unwrap().access, "fresh");
 
         // Notifications on: the copy moves to the server, and a session without its own uses that one.
-        let device = Subscription { endpoint: "https://push/1".into(), p256dh: vec![4; 65], auth: vec![1; 16] };
+        let device = Subscription { endpoint: "https://push/1".into(), p256dh: vec![4; 65], auth: vec![1; 16], off: String::new() };
         s.add_device("a@x.pl", &device).unwrap();
         s.share_tokens("a@x.pl", &sid).unwrap();
         let other = s.new_session("a@x.pl", None).unwrap();
@@ -587,7 +597,7 @@ mod tests {
         for email in ["a@x.pl", "b@x.pl"] {
             s.put_tokens(email, &t).unwrap();
         }
-        let device = |n: i64| Subscription { endpoint: format!("https://push/{n}"), p256dh: vec![4; 65], auth: vec![1; 16] };
+        let device = |n: i64| Subscription { endpoint: format!("https://push/{n}"), p256dh: vec![4; 65], auth: vec![1; 16], off: String::new() };
         for n in 0..=MAX_DEVICES_PER_USER {
             s.add_device("a@x.pl", &device(n)).unwrap();
         }
@@ -600,6 +610,14 @@ mod tests {
         assert_eq!(s.watched().unwrap(), ["a@x.pl", "b@x.pl"]);
         s.remove_device(&device(1).endpoint, Some("a@x.pl")).unwrap();
         assert_eq!(s.devices("b@x.pl").unwrap().len(), 1, "only the owner removes a device");
+        assert_eq!(s.devices("b@x.pl").unwrap()[0].off, "przerwy", "the breaks start off");
+        assert!(s.set_off("b@x.pl", &device(1).endpoint, "oceny").unwrap());
+        assert!(!s.set_off("a@x.pl", &device(1).endpoint, "oceny").unwrap(), "only the owner says what a device gets");
+        s.add_device("b@x.pl", &device(1)).unwrap();
+        assert_eq!(s.devices("b@x.pl").unwrap()[0].off, "oceny", "a device registered again keeps its choice");
+        s.add_device("a@x.pl", &device(1)).unwrap();
+        assert_eq!(s.devices("a@x.pl").unwrap().iter().find(|d| d.endpoint == device(1).endpoint).unwrap().off, "przerwy", "not its last user's");
+        s.add_device("b@x.pl", &device(1)).unwrap();
 
         s.set_feed("a@x.pl", "1u", "77", "").unwrap();
         s.set_feed("a@x.pl", "1u", "", "gone").unwrap();

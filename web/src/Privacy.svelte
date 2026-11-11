@@ -15,8 +15,9 @@
   </p>
   <p>
     <strong>Co serwer zapisuje:</strong> Twój adres e-mail i&nbsp;tokeny dostępu do konta LIBRUS. Hasła nie zapisuje. Gdy
-    włączysz powiadomienia, także adres usługi powiadomień Twojej przeglądarki oraz historię zmian: rodzaj i&nbsp;numer
-    wpisu, bez jego treści.
+    włączysz powiadomienia, także adres usługi powiadomień Twojej przeglądarki, wybrane na nim rodzaje powiadomień oraz
+    historię zmian: rodzaj i&nbsp;numer wpisu, bez jego treści. Dla powiadomień o&nbsp;przerwach serwer trzyma
+    w&nbsp;pamięci, bez zapisu, dzisiejsze lekcje ucznia: godziny, przedmioty i&nbsp;sale.
   </p>
   <p>
     <strong>Szyfrowanie:</strong> tokeny są zaszyfrowane kluczem, który jest tylko w&nbsp;ciasteczku Twojej sesji. Serwer go

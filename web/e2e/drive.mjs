@@ -186,7 +186,7 @@ if (weekday) {
     return rows('.lessons li.current');
   };
   const marks = [await at('08:20'), await at('08:50'), await at('23:00')];
-  check('start: lesson in progress, then the next one, nothing after school', marks[0].length === 1 && /Matematyka.*teraz/.test(marks[0][0]) && marks[1].length === 1 && /Fizyka.*następna/.test(marks[1][0]) && marks[2].length === 0, marks);
+  check('start: lesson in progress, then the next one, nothing after school', marks[0].length === 1 && /Matematyka.*do końca 25 min/.test(marks[0][0]) && marks[1].length === 1 && /Fizyka.*następna/.test(marks[1][0]) && marks[2].length === 0, marks);
   const after = [(await text('.panels .card h2'))[0], await js(`document.querySelector('.panels .card').classList.contains('today')`)];
   check('start: after the last lesson the plan moves to the next school day', !after[1] && (friday ? /^poniedziałek, /.test(after[0]) : after[0] === 'Jutro'), after);
   await at('07:30');
@@ -227,37 +227,66 @@ await until(`document.querySelector('main section h2').innerText.startsWith('pon
 const monday = await js(`document.querySelector('main section').innerText`);
 check('plan: a picked day shows its lessons', /1\s+08:00\s*–\s*08:45\s+Matematyka/.test(monday) &&
   (await js(`document.querySelectorAll('.days button')[0].getAttribute('aria-pressed')`)) === 'true' && !(await js(`${todayButton}.disabled`)), monday);
+await js(`document.querySelectorAll('.days button')[2].click()`);
+await until(`document.querySelector('main section h2').innerText.startsWith('środa')`);
+const changed = [await text('.lessons s.was'), await text('.lessons .change')];
+const swapped = await js(`(() => { const li = document.querySelector('.lessons s.was').closest('li'); return [li.querySelector('.name').textContent, li.querySelector('small.muted').textContent.trim()]; })()`);
+check('plan: a substitution strikes out the subject and teacher it replaced, beside the current ones, with the note',
+  JSON.stringify(changed) === JSON.stringify([['Język polski', 'Piotr'], ['Przynieście zeszyty']]) &&
+  JSON.stringify(swapped) === JSON.stringify(['Język polski, teraz Fizyka', 'Piotr, teraz Anna Nowak · sala\u00a0104']), { changed, swapped });
 await sleep(200);
 await shot('3-plan-day');
 await clickText('.segmented button', 'Tydzień');
-check('plan: the week view is remembered', (await until(`document.querySelectorAll('main section').length === 5`)) && (await js(`localStorage.getItem('plan-view')`)) === 'week');
+check('plan: the week view is remembered', (await until(`document.querySelectorAll('.week .column').length === 5`)) && (await js(`localStorage.getItem('plan-view')`)) === 'week');
 await go('#/start', loaded);
 // The opened 4+ is no longer counted on Start (the panel refreshes behind the remembered answer).
 check('start: an opened grade is not counted as new any more', await until(`document.querySelectorAll('.news a').length === 1`) &&
   (await rows('.news a'))[0] === '1 nowa wiadomość', await rows('.news a'));
-await go('#/plan', `document.querySelectorAll('main section').length === 5`);
-const firstDay = await js(`document.querySelector('main section').innerText`);
-check('plan: 7 days, sorted, room symbol', /1\s+08:00\s*–\s*08:45\s+Matematyka/.test(firstDay) && /sala\s104/.test(firstDay) && firstDay.indexOf('Fizyka') < firstDay.indexOf('Język polski'), firstDay);
-check('plan: a room the school named "sala gim." is not called a room twice', firstDay.includes(' · sala gim.') && !firstDay.includes('sala sala'), firstDay);
-check('plan: canceled lesson tagged', (await js(`document.querySelectorAll('li.canceled').length`)) === 1);
-const changed = await text('.lessons .change');
-check('plan: substitution names what it replaced, with the note', JSON.stringify(changed) === JSON.stringify(['zamiast: Język polski, Piotr', 'Przynieście zeszyty']), changed);
+const COLUMNS = `document.querySelectorAll('.week .column').length === 5`;
+await go('#/plan', COLUMNS);
+const said = (sel) => js(`[...document.querySelectorAll(${JSON.stringify(sel)})].map((b) => b.getAttribute('aria-label'))`);
+const saidOn = (day) => js(`[...document.querySelectorAll('.week .column')[${day}].querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))`);
+const firstDay = await saidOn(0);
+check('plan: the week on a clock, lessons in order, each read out with its teacher and room', JSON.stringify(firstDay.slice(0, 2)) ===
+  JSON.stringify(['08:00–08:45, Matematyka, Anna Nowak, sala\u00a0104', '08:55–09:40, Fizyka, Anna Nowak, sala\u00a0104']) &&
+  firstDay[2]?.startsWith('09:50–10:35, Język polski') && firstDay[2].includes('sala gim.') && !firstDay[2].includes('sala sala'), firstDay);
+const geometry = await js(`(() => { const [a, b] = [...document.querySelectorAll('.week .column')[0].querySelectorAll('button')].map((x) => x.getBoundingClientRect());
+  return { ppm: parseFloat(getComputedStyle(document.querySelector('.week')).getPropertyValue('--ppm')), height: a.height, gap: b.top - a.bottom }; })()`);
+check('plan: a lesson as tall as it lasts, a break as the room between', Math.abs(geometry.height - 45 * geometry.ppm) <= 3 && Math.abs(geometry.gap - 10 * geometry.ppm) <= 3, geometry);
+check('plan: canceled lesson marked', (await js(`document.querySelectorAll('.week li.canceled').length`)) === 1 &&
+  (await said('.week li.canceled button'))[0].endsWith(', odwołana'));
+const sub = (await saidOn(2)).find((l) => l.includes('zastępstwo'));
+check('plan: a substitution is flagged and says what it replaced', sub?.endsWith('zastępstwo, zamiast: Język polski, Piotr') &&
+  (await js(`!!document.querySelectorAll('.week .column')[2].querySelector('.flags .dot.on')`)), sub);
+// The calendar's Matematyka test two days ahead, given at lesson 3 (Język polski there), and another group's test in a
+// subject not in this plan yesterday. In this week's view Monday to Wednesday, and yesterday's too from Tuesday.
+const dow = await js(`new Date().getDay()`);
+if (dow >= 1 && dow <= 3) {
+  await until(`!!document.querySelector('.week .tag.exam')`);
+  const test = await js(`[...document.querySelectorAll('.week .tag.exam')].map((t) => [t.textContent, t.closest('button').getAttribute('aria-label')])`);
+  check('plan: a test shows on its subject\'s lesson, not at the wrong lesson number it was given', test.length === 1 && test[0][0] === 'Sprawdzian' &&
+    test[0][1].startsWith('08:00–08:45, Matematyka') && test[0][1].endsWith(', Sprawdzian: Funkcje liniowe'), test);
+  if (dow >= 2) check('plan: a test in a subject not in the plan (another group\'s) is left out', !(await js(`document.querySelector('main').innerText.includes('Statystyka')`)) && test.length === 1);
+}
 check('plan: the week range is named', /^\d+(–| – )\d+ \p{L}+$|^\d+ \p{L}+ – \d+ \p{L}+$/u.test((await text('.range'))[0]), await text('.range'));
 await shot('3-plan');
+await js(`document.querySelectorAll('.week .column')[0].querySelector('button').click()`);
+check('plan: a lesson tapped in the week opens its day, the week still the remembered view',
+  (await until(`document.querySelector('main section h2')?.innerText.startsWith('poniedziałek')`)) && (await js(`localStorage.getItem('plan-view')`)) === 'week');
+await clickText('.segmented button', 'Tydzień');
+await until(COLUMNS);
 if (weekday) {
-  const place = await js(`(() => { const top = document.querySelector('.card.today').getBoundingClientRect().top; return { top, first: document.querySelector('main section').classList.contains('today'), end: scrollY + innerHeight >= document.documentElement.scrollHeight - 2 }; })()`);
-  check('plan: opens at today', place.first || (place.top >= 60 && place.top <= 90) || place.end, place);
+  check('plan: opens at this week, today marked', await js(`!!document.querySelector('.week .wday[aria-current=date]')`));
   // After school the same view opens at the next school day; on a Friday that is the week after.
   await js(`Date.prototype.toTimeString = () => '23:00:00 GMT+0100'`);
   await go('#/start', loaded);
-  await go('#/plan', `document.querySelectorAll('main section').length === 5`);
+  await go('#/plan', COLUMNS);
   await sleep(200);
-  const later = await js(`(() => { const cards = [...document.querySelectorAll('main section')]; const today = cards.findIndex((c) => c.classList.contains('today')); const top = (i) => cards[i]?.getBoundingClientRect().top;
-    return { today, next: top(today + 1), thisWeek: today !== -1, end: scrollY + innerHeight >= document.documentElement.scrollHeight - 2 }; })()`);
-  check('plan: after the last lesson it opens at the next school day', friday ? later.today === -1 && !later.thisWeek : later.thisWeek && ((later.next >= 60 && later.next <= 90) || later.end), later);
+  const later = await js(`!!document.querySelector('.week .wday[aria-current=date]')`);
+  check('plan: after the last lesson on a Friday it opens at the week after', friday ? !later : later, later);
   await js(`Date.prototype.toTimeString = () => '07:30:00 GMT+0100'`);
   await go('#/start', loaded);
-  await go('#/plan', `document.querySelectorAll('main section').length === 5`);
+  await go('#/plan', COLUMNS);
 }
 const before = (await log()).filter((l) => l.includes('Timetables')).length;
 await js(`document.querySelector('[aria-label="Następny tydzień"]').click()`);
@@ -329,13 +358,14 @@ await until(hasButton('Zainstaluj aplikację'));
 await clickText('main button', 'Zainstaluj aplikację');
 await until(`!${hasButton('Zainstaluj aplikację')}`);
 check('install: the offer is held back, asked on the button, and the button goes once answered', (await js(`window.__prevented && window.__asked === true`)) && !(await js(hasButton('Zainstaluj aplikację'))));
+check('install: no Android advice off Android', !(await mainText()).includes('na Androidzie'));
 check('more: account and logout live here', (await mainText()).includes('Zalogowano jako rodzic@example.com') && (await js(hasButton('Wyloguj'))));
 await shot('5-more');
 check('more: a bug report opens the issues apart from the app', await js(`(() => { const a = [...document.querySelectorAll('main a')].find((e) => e.textContent.trim() === 'Zgłoś błąd'); return a?.href === 'https://github.com/D3anDark/dziennik/issues/new?template=bug.yml&server=127.0.0.1%3A18081' && a.target === '_blank'; })()`));
 
 await go('#/terminarz', `document.querySelectorAll('main .events li').length > 0`);
 const cal = await text('main .events li strong');
-check('calendar: month events incl. single-key HomeWork', cal.includes('Sprawdzian: Matematyka') && cal.includes('Wycieczka klasowa'), cal);
+check('calendar: month events incl. HomeWorks', cal.includes('Sprawdzian: Matematyka') && cal.includes('Wycieczka klasowa'), cal);
 check('calendar: range end shown', (await mainText()).includes('do '));
 check('more tab current on subpage', (await text('nav.tabs a[aria-current=page]'))[0]?.endsWith('Więcej'));
 check('subpage: a way back to the menu', (await js(`document.querySelector('main a.back')?.getAttribute('href')`)) === '#/wiecej' && (await text('main a.back'))[0] === 'Więcej');
@@ -567,7 +597,15 @@ check('push: subscribes with the server key and registers the device', (await js
 const feedRows = await rows('main .access li');
 check('push: feed state per student', feedRows[0]?.startsWith('Jan Testowy Sprawdzono 9 lis 2025') && feedRows[1] === 'Ala Testowa Sesja Librusa wygasła. Zaloguj ponownie' &&
   (await js(`[...document.querySelectorAll('main .access li:nth-child(2) button')].map((b) => b.textContent.trim()).join()`)) === 'Zaloguj ponownie', feedRows);
+const pushKinds = await js(`[...document.querySelectorAll('main label.check')].map((l) => (l.querySelector('input').checked ? '+' : '-') + l.textContent.trim())`);
+check('push: kinds of message, as the server keeps them for this device', pushKinds.length === 11 && pushKinds[0] === "+Oceny" && pushKinds[9] === "+Szczęśliwy numerek" && pushKinds[10].startsWith("-Przerwy"), pushKinds);
 await shot('17-push');
+await clickText('main label.check', 'Szczęśliwy numerek');
+await until(`fetch('/__log').then((r) => r.json()).then((l) => l.some((x) => x.startsWith('PUT /api/push')))`);
+await until(`!document.querySelector('main label.check input').disabled`);
+check('push: a kind turned off is saved for this device', (await log()).includes('PUT /api/push {"endpoint":"https://fcm.googleapis.com/fcm/send/e2e","off":["przerwy","numerek"]}') &&
+  !(await js(`[...document.querySelectorAll('main label.check input')][9].checked`)), (await log()).filter((l) => l.includes('/api/push')));
+
 await clickText('main button', 'Wyłącz');
 await until(hasButton('Włącz powiadomienia'));
 check('push: turning it off removes the device from the server and the browser', (await js('window.__sub')) === null &&
@@ -785,6 +823,24 @@ check('desktop: a long e-mail ends in an ellipsis, the bug report and logout sta
 await go('#/terminarz', `document.querySelectorAll('.soon li').length === 3 && ${loaded}`);
 check('desktop calendar: the month and its tiles beside the list', await js(`(() => { const [a, b] = document.querySelectorAll('.panels > .col'); return a.getBoundingClientRect().right <= b.getBoundingClientRect().left; })()`));
 await shot('21-desktop-calendar');
+await go('#/plan', loaded);
+await clickText('.segmented button', 'Tydzień');
+await until(`document.querySelectorAll('.week .column').length === 5 && !!document.querySelector('.week .tag.exam')`);
+await shot('21-desktop-plan');
+if (weekday) {
+  const pin = async (time) => {
+    await js(`Date.prototype.toTimeString = () => '${time}:00 GMT+0100'`);
+    await js(`document.querySelector('header button[aria-label=Odśwież], .side button[aria-label=Odśwież]').click()`);
+    await sleep(100);
+    await until(`!document.querySelector('.busy')`);
+  };
+  await pin('08:20');
+  const tag = await js(`(() => { const t = document.querySelector('.week li.current .time'), line = document.querySelector('.week .column .now'); return t && { text: t.textContent, line: !!line && Math.round(line.getBoundingClientRect().top - t.closest('button').getBoundingClientRect().top) }; })()`);
+  check('desktop plan: the lesson in progress counts down, a line across today at the time, under the lessons', tag?.text === 'do końca 25 min' && Math.abs(tag.line - 20 * 1.6) <= 3 &&
+    (await js(`document.querySelector('.week .column .now') === document.querySelector('.week .column .now').parentNode.firstElementChild`)), tag);
+  await shot('21-desktop-plan-now');
+  await pin('07:30');
+}
 await clickText('.side .nav-row .grow', 'Oceny');
 await until(`document.querySelector('h1.title')?.textContent === 'Oceny' && ${loaded}`);
 check('desktop: the sidebar navigates and marks the place', (await text('.side .nav-row[aria-current=page]'))[0] === 'Oceny');
@@ -799,6 +855,8 @@ await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-sch
 await go('#/aktywnosc', loaded);
 await go('#/terminarz', `document.querySelectorAll('.soon li').length === 3 && ${loaded}`);
 await shot('22-desktop-calendar-dark');
+await go('#/plan', `document.querySelectorAll('.week .column').length === 5 && !!document.querySelector('.week .tag.exam')`);
+await shot('22-desktop-plan-dark');
 await go('#/start', `document.querySelectorAll('main .events li').length > 0 && ${loaded}`);
 await shot('22-desktop-start-dark');
 await send('Emulation.setEmulatedMedia', { features: [] });
@@ -846,6 +904,17 @@ await js(`document.dispatchEvent(new Event('visibilitychange'))`);
 const reloaded = await until(`!window.__old && !!document.querySelector('script[src="/assets/index-next.js"]') && document.querySelectorAll('main h2').length > 0`, 8000);
 check('update: and the next time it switches to it by itself', reloaded && !(await js(`!!document.querySelector('.banner button')`)));
 await Promise.all([writeFile(new URL('index.html', dist), html0), writeFile(new URL('sw.js', dist), worker0), rm(new URL('assets/index-next.js', dist))]);
+
+// The user agent is read once, on load: Android is told about at the end, where reloads count no requests.
+const where = await js('location.hash');
+await send('Emulation.setUserAgentOverride', { userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36' });
+await send('Page.reload');
+await go('#/wiecej', `document.querySelectorAll('.menu a').length > 0`);
+check('install: on Android the app points to Chrome for installing', await until(`document.querySelector('main').innerText.includes('Najlepiej zainstaluj Dziennik z\u00a0Google Chrome.')`));
+await send('Emulation.setUserAgentOverride', { userAgent: '' });
+await js(`location.hash = ${JSON.stringify(where)}`);
+await send('Page.reload');
+await until(`document.querySelectorAll('main h2').length > 0`);
 
 await send('Network.enable');
 process.kill(Number(mockPid));
