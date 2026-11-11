@@ -1,12 +1,13 @@
 import { mount } from 'svelte';
 import App from './App.svelte';
-import { update, drafts } from './api.svelte.js';
+import { update, drafts, DEMO } from './api.svelte.js';
 import '@fontsource-variable/geist/wght.css';
 import './app.css';
 
 mount(App, { target: document.getElementById('app') });
 
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+// The demo is a page on a static host, without a server to install from or push through.
+if ('serviceWorker' in navigator && import.meta.env.PROD && !DEMO) {
   const sw = navigator.serviceWorker;
   // An installed app is resumed rather than loaded again, and browsers look for a new sw.js only when a page loads.
   sw.register('/sw.js').then((reg) => {

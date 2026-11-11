@@ -1,0 +1,74 @@
+// Smoke test of the demo build (dist-demo/) as GitHub Pages serves it, under a subpath: every view on a phone and a
+// wide screen loads with no error, no console problem and something in it. Run by e2e/demo.sh.
+import { writeFile } from 'node:fs/promises';
+
+const [, , cdpPort, out, base] = process.argv;
+const page = (await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()).find((t) => t.type === 'page');
+const ws = new WebSocket(page.webSocketDebuggerUrl);
+await new Promise((r) => (ws.onopen = r));
+let seq = 0;
+const pending = new Map();
+const problems = [];
+ws.onmessage = (m) => {
+  const msg = JSON.parse(m.data);
+  if (msg.id) pending.get(msg.id)?.(msg);
+  else if (msg.method === 'Runtime.exceptionThrown') problems.push('exception: ' + (msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text));
+  else if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(msg.params.type)) problems.push(`console.${msg.params.type}: ` + msg.params.args.map((a) => a.value ?? a.description).join(' '));
+  else if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') problems.push(`log: ${msg.params.entry.text} ${msg.params.entry.url ?? ''}`);
+};
+const send = (method, params = {}) =>
+  new Promise((res, rej) => {
+    const id = ++seq;
+    pending.set(id, (m) => (m.error ? rej(new Error(`${method}: ${m.error.message}`)) : res(m.result)));
+    ws.send(JSON.stringify({ id, method, params }));
+  });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const js = async (expression) => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })).result.value;
+const until = async (expr, ms = 4000) => {
+  for (const end = Date.now() + ms; Date.now() < end; await sleep(50)) if (await js(expr)) return true;
+  return false;
+};
+const check = (name, ok, detail = '') => console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ': ' + JSON.stringify(detail) : ''}`);
+const loaded = `!!document.querySelector('main') && !document.querySelector('main').innerText.includes('Ładowanie')`;
+
+await send('Page.enable');
+await send('Runtime.enable');
+await send('Log.enable');
+const VIEWS = ['start', 'oceny', 'plan', 'frekwencja', 'wiadomosci', 'terminarz', 'aktywnosc', 'zadania', 'tematy', 'ogloszenia', 'uwagi', 'zachowanie', 'nauczyciele', 'powiadomienia', 'dostep'];
+for (const [size, width, height, mobile] of [['phone', 390, 844, true], ['desktop', 1280, 800, false]]) {
+  await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
+  await send('Page.navigate', { url: `${base}/#/start` });
+  check(`${size}: opens signed in, the demo said so`, await until(`${loaded} && document.querySelector('.banner')?.innerText.startsWith('Wersja demo:')`));
+  for (const view of VIEWS) {
+    await js(`location.hash = '#/${view}'`);
+    const ok = await until(`${loaded} && document.querySelector('main').innerText.trim().length > 40`);
+    await sleep(150);
+    const alert = await js(`document.querySelector('main [role=alert], main .error')?.innerText ?? ''`);
+    check(`${size}: ${view} shows data`, ok && !alert && !(await js(`[...document.querySelectorAll('main p.center.muted')].some((p) => p.innerText.startsWith('Brak'))`)), alert);
+    if (size === 'phone' || ['start', 'oceny', 'plan'].includes(view)) {
+      const { data } = await send('Page.captureScreenshot', { format: 'png' });
+      await writeFile(`${out}/demo-${size}-${view}.png`, Buffer.from(data, 'base64'));
+    }
+  }
+}
+
+await js(`location.hash = '#/start'`);
+check('start: the day shown has a substitution', await until(`document.querySelector('main .lessons')?.innerText.includes('zastępstwo')`));
+
+// What a visitor does: opens a message, writes one, marks homework done, opens an attachment link.
+await js(`location.hash = '#/wiadomosci'`);
+await until(`document.querySelectorAll('.messages li').length > 0`);
+const unreadBefore = await js(`document.querySelectorAll('.messages .unread').length`);
+await js(`document.querySelector('.messages .unread a').click()`);
+check('message opens with its text and attachment', await until(`document.querySelector('main').innerText.includes('zgody') && !!document.querySelector('.files button')`));
+await js(`location.hash = '#/wiadomosci'`);
+await until(`document.querySelectorAll('.messages li').length > 0`);
+check('an opened message is no longer unread', unreadBefore === 2 && (await until(`document.querySelectorAll('.messages .unread').length === 1`)), unreadBefore);
+await js(`location.hash = '#/start'`);
+await js(`document.querySelector('.side .account:not([aria-pressed=true])').click()`);
+check('the second child has data of its own', await until(`${loaded} && document.querySelector('main').innerText.includes('Ostatnie oceny') && document.querySelector('.side .account[aria-pressed=true]').innerText.includes('Antoni')`));
+const attachment = await js(`fetch('zalacznik.pdf').then((r) => r.ok && r.headers.get('content-type'))`);
+check('the attachment file is served next to the app', String(attachment).includes('pdf'), attachment);
+
+check('no console errors/exceptions', problems.length === 0, problems);
+process.exit(0);

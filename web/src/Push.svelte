@@ -1,5 +1,5 @@
 <script>
-  import { api, session, message, resource } from './api.svelte.js';
+  import { api, session, message, resource, DEMO } from './api.svelte.js';
   import { fmtUnix, ago } from './util.js';
   import { supported, current, enable, disable } from './push.js';
   import Icon from './Icon.svelte';
@@ -40,7 +40,9 @@
 <!-- The state and its switch first; what the notifications cover is the fine print under them. -->
 <section class="card compose">
   <h2>Na tym urządzeniu</h2>
-  {#if !supported}
+  {#if DEMO}
+    <p class="muted">W wersji demonstracyjnej powiadomień nie ma: wysyła je serwer aplikacji.</p>
+  {:else if !supported}
     <p class="muted">
       Ta przeglądarka nie obsługuje powiadomień. Na iPhonie i iPadzie dodaj najpierw aplikację do ekranu początkowego
       (Udostępnij, potem „Do ekranu początkowego”) i otwórz ją stamtąd.

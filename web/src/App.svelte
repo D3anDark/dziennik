@@ -1,5 +1,5 @@
 <script>
-  import { api, post, session, net, clock, lookup, clearApiCache, inbox, update, drafts } from './api.svelte.js';
+  import { api, post, session, net, clock, lookup, clearApiCache, inbox, update, drafts, DEMO } from './api.svelte.js';
   import { tick } from 'svelte';
   import { refreshUnread } from './webmail.js';
   import { initials, fmtUnix } from './util.js';
@@ -253,6 +253,9 @@
         </button>
       </header>
 
+      {#if DEMO}
+        <p class="banner" role="note"><span><strong>Wersja demo:</strong> przykładowe dane. <a href="https://github.com/D3anDark/dziennik">Kod i&nbsp;instalacja</a></span></p>
+      {/if}
       {#if !net.online}
         <p class="banner" role="status"><span><strong>Offline:</strong> dane z ostatniego połączenia{net.synced ? ` (${fmtUnix(net.synced / 1000)})` : ''}.</span></p>
       {/if}

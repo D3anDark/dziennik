@@ -81,10 +81,13 @@ export function message(e) {
   return e?.cause && /^http_/.test(e.message) ? `${text} Librus: „${e.cause}”` : text;
 }
 
+/** The demo build (vite --mode demo) has no server: demo.js answers in the page with made-up data. */
+export const DEMO = import.meta.env.MODE === 'demo';
+
 export async function api(path, init) {
   let res;
   try {
-    res = await fetch(`/api/${path}`, init);
+    res = DEMO ? (await import('./demo.js')).answer(path, init) : await fetch(`/api/${path}`, init);
   } catch {
     throw new Error('offline');
   }

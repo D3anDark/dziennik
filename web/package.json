@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "demo": "vite build --mode demo --base ./ --outDir dist-demo && cp demo/zalacznik.pdf dist-demo/",
     "e2e": "vite build && e2e/run.sh"
   },
   "devDependencies": {

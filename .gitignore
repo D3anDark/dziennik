@@ -3,4 +3,5 @@
 *.db-*
 web/node_modules
 web/dist
+web/dist-demo
 .env

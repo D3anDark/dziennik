@@ -8,6 +8,11 @@ JSON. Na stronie Synergii wysyła wyłącznie formularze z listy `WEB_WRITES`. H
 Projekt nieoficjalny, niezwiązany z firmą Librus: zobacz [Zastrzeżenia](#zastrzeżenia). Po co powstał:
 [MANIFEST.md](MANIFEST.md).
 
+Wersja demo: <https://d3andark.github.io/dziennik/>. To ten sam frontend z przykładowymi danymi rodzica dwójki dzieci,
+bez logowania i bez serwera: `web/src/demo.js` odpowiada na zapytania aplikacji w przeglądarce, daty idą za zegarem
+urządzenia. Build: `cd web && npm run demo` (katalog `web/dist-demo`, ścieżki względne, bez service workera i powiadomień);
+`.github/workflows/demo.yml` publikuje go na GitHub Pages przy każdym pushu na `main`.
+
 Widoki: start (wiersz nowych wiadomości i ocen z linkami, plan dnia, ostatnie oceny, 14 dni terminarza, aktywność), aktywność (nowe, zmienione i
 usunięte oceny, wpisy frekwencji, uwagi, wiadomości, terminy, zmiany planu), oceny ze średnimi i komentarzami (zwykłe,
 punktowe, tekstowe i opisowe: `Grades`, `PointGrades`, `TextGrades`, `DescriptiveGrades`, `DescriptiveTextGrades`,
@@ -161,6 +166,9 @@ dostępem, powiadomienia (subskrypcja na atrapie przeglądarki, prawdziwe zdarze
 oceniania, wiadomości ze strony Synergii (czytanie, nowa wiadomość, odpowiedź, formularz odrzucony przez stronę),
 aktywność, ponowna próba przy awarii Librusa, odświeżanie, układ na szerokim ekranie, routing, tryb offline, aktualizacja do nowej wersji, wylogowanie. `SHOTS=katalog` zachowuje zrzuty
 ekranu. Ten test działa na atrapie serwera w Pythonie, nie na serwerze Rust.
+
+`cd web && npm run demo && CHROME=/ścieżka/do/chromium e2e/demo.sh`: wersja demo pod podścieżką, jak na GitHub Pages:
+każdy widok na telefonie i komputerze bez błędu i z danymi, otwarcie wiadomości, drugie dziecko, plik załącznika.
 
 `.github/workflows/ci.yml` uruchamia `cargo test`, `cargo clippy`, test instalatora i build frontendu. Testu UI w nim
 nie ma: wymaga przeglądarki.

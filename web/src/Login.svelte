@@ -1,5 +1,5 @@
 <script>
-  import { post, session, message, clearApiCache } from './api.svelte.js';
+  import { post, session, message, clearApiCache, DEMO } from './api.svelte.js';
   import Icon from './Icon.svelte';
 
   let email = $state('');
@@ -29,6 +29,7 @@
 <form class="login card" onsubmit={submit}>
   <h1>Dziennik</h1>
   <p class="muted">Zaloguj się kontem LIBRUS (e-mail i hasło z portal.librus.pl).</p>
+  {#if DEMO}<p class="muted">Wersja demonstracyjna: zadziała dowolny e-mail i&nbsp;hasło.</p>{/if}
   <label>
     E-mail
     <input type="email" name="email" autocomplete="username" autocapitalize="none" spellcheck="false" enterkeyhint="next" required bind:value={email} />
