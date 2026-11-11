@@ -1386,7 +1386,7 @@ section.card.today > h2 {
   white-space: nowrap;
 }
 
-/* Now, across today; under the blocks, which say it themselves (the ring, the countdown). */
+/* Now, across today at its minute and over the lessons, as on a calendar; a dot where the line starts. */
 .week .column > .now {
   top: calc((var(--at) - var(--from)) * var(--ppm) - 1px);
   left: 0;
@@ -1394,6 +1394,18 @@ section.card.today > h2 {
   height: 2px;
   background: var(--mark);
   pointer-events: none;
+}
+
+.week .column > .now::before,
+.lessons li > .now::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mark);
 }
 
 .segmented {
@@ -2152,6 +2164,16 @@ button.chip {
   box-shadow: inset 3px 0 hsl(var(--hue) var(--tint-edge)), 0 0 0 2px var(--mark);
 }
 
+/* The same line in a day's list: across the lesson in progress at the share of it gone (`--gone`). */
+.lessons li > .now {
+  position: absolute;
+  top: calc(var(--gone) * 100% - 1px);
+  inset-inline: 0;
+  height: 2px;
+  background: var(--mark);
+  pointer-events: none;
+}
+
 /* The break's length between two rules; a long break and a free period louder. A group split at the same hour: a gap. */
 .lessons .break {
   position: absolute;
@@ -2188,6 +2210,18 @@ button.chip {
 .lessons .break.long::before,
 .lessons .break.long::after {
   background: var(--field);
+}
+
+/* During a break its own rules are the line of now, the dot at their start. */
+.lessons .break.on {
+  inset-inline: -4px 0;
+  background: radial-gradient(circle at 4px 50%, var(--mark) 4px, transparent 4.5px);
+}
+
+.lessons .break.on::before,
+.lessons .break.on::after {
+  height: 2px;
+  background: var(--mark);
 }
 
 .lessons .no {

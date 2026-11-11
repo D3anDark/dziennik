@@ -138,7 +138,8 @@ szerokość do czytania (760 px), start i tydzień planu zajmują całą stronę
 godzinie i jest tak wysoka, jak długo trwa, więc przerwy i okienka widać jako odstęp; lekcje o tej samej porze (grupy,
 odwołana i zastępcza) stoją obok siebie. Blok ma przedmiot ("j. polski" zamiast "Język polski") i salę, od 900 px także godziny i nauczyciela;
 czytnik ekranu słyszy całość, a dotknięcie otwiera ten dzień. Trwająca lekcja ma obwódkę i odliczanie, dzisiejszą
-kolumnę przecina linia bieżącej godziny. Lekcja to blok w odcieniu swojego przedmiotu (odcień z id przedmiotu, poza
+kolumnę przecina linia bieżącej godziny z kropką na początku, nad lekcjami; w widoku dnia i na starcie ta sama linia
+przecina trwającą lekcję tam, ile jej minęło, a w czasie przerwy jest nią kreska przerwy. Poza godzinami lekcji linii nie ma. Lekcja to blok w odcieniu swojego przedmiotu (odcień z id przedmiotu, poza
 czerwienią, która znaczy odwołanie); w widoku dnia między blokami stoi długość przerwy, a przerwa od 15 minut i okienko
 są wyróżnione. Sprawdzian albo kartkówka z terminarza stoi na lekcji swojego przedmiotu tego dnia: tej o podanym numerze albo
 godzinie, inaczej najbliższej numerem (w klasie łączonej nauczyciel wpisuje jeden termin całej klasie i numer lekcji bywa

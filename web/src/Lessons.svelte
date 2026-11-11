@@ -74,6 +74,22 @@
   const now = $derived(time.now);
   const current = $derived(live ? lessons.findIndex((l) => !l.IsCanceled && l.HourTo > now) : -1);
   const placed = $derived(place(lessons, events));
+  /**
+   * Where the line of now goes: across lesson `i` at the share of it `gone` (a held one before a cancelled one of the
+   * same hour), or, `gone` null, on the break before it. None outside the day's hours.
+   */
+  const line = $derived.by(() => {
+    if (!live) return null;
+    const running = (l) => l.HourFrom <= now && now < l.HourTo;
+    let i = lessons.findIndex((l) => running(l) && !l.IsCanceled);
+    if (i < 0) i = lessons.findIndex(running);
+    if (i >= 0) {
+      const from = minutes(lessons[i].HourFrom);
+      return { i, gone: (minutes(now) - from) / (minutes(lessons[i].HourTo) - from) };
+    }
+    i = lessons.findIndex((l) => l.HourFrom > now);
+    return i > 0 ? { i, gone: null } : null;
+  });
 
   /** The break before lesson `i`, named: a free period where a lesson number is skipped. None for a group split at the same hour. */
   function pause(i) {
@@ -93,7 +109,7 @@
       <li class:canceled={l.IsCanceled} class:current={i === current}>
         {#if i}
           {@const p = pause(i)}
-          <span class="break" class:long={p?.long}>{p?.text ?? ''}</span>
+          <span class="break" class:long={p?.long} class:on={line?.i === i && line.gone === null}>{p?.text ?? ''}</span>
         {/if}
         <div class="lesson" style:--hue={hue(l.Subject)}>
           <span class="no">{l.LessonNo}</span>
@@ -121,6 +137,8 @@
             {/each}
           </span>
         </div>
+        <!-- After the block, so over it. The countdown beside the subject says the same in words. -->
+        {#if line?.i === i && line.gone !== null}<span class="now" style:--gone={line.gone} aria-hidden="true"></span>{/if}
       </li>
     {/each}
   </ol>

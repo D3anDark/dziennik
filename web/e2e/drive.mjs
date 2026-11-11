@@ -183,10 +183,15 @@ if (weekday) {
     await js(`document.querySelector('header button[aria-label=Odśwież]').click()`);
     await sleep(100);
     await until(`!document.querySelector('header .busy')`);
+    // The line of now: the share of its lesson above it, in percent, or the break it marks.
+    lines.push(await js(`(() => { const l = document.querySelector('.lessons li > .now'), r = l?.parentNode.getBoundingClientRect();
+      return l ? Math.round(((l.getBoundingClientRect().top + 1 - r.top) / r.height) * 100) : (document.querySelector('.lessons .break.on')?.textContent ?? null); })()`));
     return rows('.lessons li.current');
   };
+  const lines = [];
   const marks = [await at('08:20'), await at('08:50'), await at('23:00')];
   check('start: lesson in progress, then the next one, nothing after school', marks[0].length === 1 && /Matematyka.*do końca 25 min/.test(marks[0][0]) && marks[1].length === 1 && /Fizyka.*następna/.test(marks[1][0]) && marks[2].length === 0, marks);
+  check('start: a line across the lesson in progress at the share of it gone, on the break during one, none after school', JSON.stringify(lines) === JSON.stringify([44, 'Przerwa 10 min', null]), lines);
   const after = [(await text('.panels .card h2'))[0], await js(`document.querySelector('.panels .card').classList.contains('today')`)];
   check('start: after the last lesson the plan moves to the next school day', !after[1] && (friday ? /^poniedziałek, /.test(after[0]) : after[0] === 'Jutro'), after);
   await at('07:30');
@@ -852,8 +857,10 @@ if (weekday) {
   };
   await pin('08:20');
   const tag = await js(`(() => { const t = document.querySelector('.week li.current .time'), line = document.querySelector('.week .column .now'); return t && { text: t.textContent, line: !!line && Math.round(line.getBoundingClientRect().top - t.closest('button').getBoundingClientRect().top) }; })()`);
-  check('desktop plan: the lesson in progress counts down, a line across today at the time, under the lessons', tag?.text === 'do końca 25 min' && Math.abs(tag.line - 20 * 1.6) <= 3 &&
-    (await js(`document.querySelector('.week .column .now') === document.querySelector('.week .column .now').parentNode.firstElementChild`)), tag);
+  // Over the lessons: the element at the line's middle is the line's own column, not the block it crosses.
+  check('desktop plan: the lesson in progress counts down, a line across today at the time, over the lessons', tag?.text === 'do końca 25 min' && Math.abs(tag.line - 20 * 1.6) <= 3 &&
+    (await js(`(() => { const l = document.querySelector('.week .column .now'), r = l.getBoundingClientRect(); l.style.pointerEvents = 'auto';
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + 1) === l; l.style.pointerEvents = ''; return top; })()`)), tag);
   await shot('21-desktop-plan-now');
   await pin('07:30');
 }

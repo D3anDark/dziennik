@@ -214,7 +214,6 @@
               {@const tests = place(d.lessons, examsOn(d.date))}
               {@const live = d.date === t}
               <ol class="column" aria-label={fmtDay(d.date)}>
-                {#if live && now >= span.from && now < span.to}<li class="now" style:--at={now} aria-hidden="true"></li>{/if}
                 {#each d.lessons as l, i (i)}
                   {@const at = cols.get(l)}
                   {@const own = tests.get(l) ?? []}
@@ -242,6 +241,8 @@
                     </button>
                   </li>
                 {/each}
+                <!-- After the lessons, so over them. -->
+                {#if live && now >= span.from && now < span.to}<li class="now" style:--at={now} aria-hidden="true"></li>{/if}
               </ol>
             {/each}
           </div>
