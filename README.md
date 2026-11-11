@@ -79,17 +79,17 @@ serwer trzyma o tej osobie, na każdym urządzeniu, poza adresem na liście dost
 
 ## Zgodność z oficjalnym repozytorium
 
-Przy kompilacji `build.rs` pyta git, czy drzewo jest czyste (bez zmian i nowych plików; każdy śledzony plik ma ten
-sam skrót co w commicie) i czy commit leży na gałęzi oficjalnego repozytorium (`github.com/D3anDark/dziennik`,
-`src/provenance.rs`). Przy starcie serwer pyta jeszcze GitHub (`api.github.com`, bez danych użytkowników), czy commit
-leży na `main`: lokalne gałęzie zdalne da się przestawić dowolnie, a odpowiedzi GitHuba nie. Wynik (`official`,
-`modified` albo `unknown`, gdy gita albo GitHuba nie da się zapytać) i commit podaje `GET /api/about` oraz log startu.
-Gdy wynik nie jest `official`, ostrzeżenie pokazuje sam serwer, niezależnie od frontendu: do każdej strony HTML,
-którą serwuje z `WEB_DIR` (nasz frontend albo dowolny inny), dopisuje skrypt `/api/warning.js`, a ten otwiera okno
-modalne: "Hostowana wersja serwera jest niezgodna z tą na oficjalnym repozytorium. Jeżeli nie ufasz osobie hostującej
-ten projekt, nie podawaj swojego loginu i hasła." Przy wersji oficjalnej skrypt jest pusty. Serwer nie startuje, gdy
-wynik `build.rs` wygląda na podmieniony albo gdy skrypt ostrzeżenia (`src/warning.js`, wkompilowany w serwer) go nie
-pokazuje.
+Przy kompilacji `build.rs` pyta git, czy drzewo jest czyste: bez zmian i nowych plików, każdy śledzony plik ma ten sam
+skrót co w commicie. Przy starcie serwer pyta GitHub (`api.github.com`, bez danych użytkowników), czy ten commit leży
+na `main` oficjalnego repozytorium (`github.com/D3anDark/dziennik`, `REPO` w `src/main.rs`). Lokalnych gałęzi zdalnych
+serwer nie sprawdza: da się je przestawić dowolnie, a platformy budujące mogą klonować bez nich. Wynik
+(`official`, `modified` albo `unknown`, gdy gita albo GitHuba nie da się zapytać) i commit podaje `GET /api/about`
+oraz log startu. Gdy wynik nie jest `official`, ostrzeżenie pokazuje sam serwer, niezależnie od frontendu: do każdej
+strony HTML, którą serwuje z `WEB_DIR` (nasz frontend albo dowolny inny), dopisuje skrypt `/api/warning.js`, a ten
+otwiera okno modalne: "Hostowana wersja serwera jest niezgodna z tą na oficjalnym repozytorium. Jeżeli nie ufasz
+osobie hostującej ten projekt, nie podawaj swojego loginu i hasła." Przy wersji oficjalnej skrypt jest pusty. Serwer
+nie startuje, gdy wynik `build.rs` wygląda na podmieniony albo gdy skrypt ostrzeżenia (`src/warning.js`, wkompilowany
+w serwer) go nie pokazuje.
 
 To sygnał, nie zabezpieczenie. Kontrole są rozproszone, więc wyciszenie ostrzeżenia wymaga zmian w kilku miejscach
 kodu, ale serwer mówi sam o sobie: nieuczciwy operator usunie je wszystkie, a z przeglądarki nie da się sprawdzić,
@@ -97,10 +97,10 @@ jaki kod naprawdę działa na serwerze. Nie wykryje też oficjalnego serwera za 
 hasła przed serwerem. Okno trafia tylko do stron serwowanych przez ten serwer: frontend postawiony osobno (np. proxy
 kieruje `/` gdzie indziej, a do serwera tylko `/api`) go nie dostanie, a frontend może je usunąć własnym skryptem.
 Dlatego aplikacja nigdy nie pokazuje plakietki "wersja oficjalna": brak ostrzeżenia niczego nie dowodzi. Mechanizm
-łapie uczciwe zmiany, np. fork albo lokalne poprawki. Gałęzie zdalne w `build.rs` są tak świeże jak ostatni `git
-fetch`: commit wypchnięty później czyta się jako `modified` do następnego pobrania. GitHub jest pytany raz, przy
-starcie: gdy wtedy nie odpowie, wynik zostaje `unknown` do restartu. Obraz Dockera kopiuje całe drzewo z `.git`, więc
-instalacja z `install.sh` po `git pull` daje `official`.
+łapie uczciwe zmiany, np. fork albo lokalne poprawki. GitHub jest pytany raz, przy starcie: gdy wtedy nie odpowie,
+wynik zostaje `unknown` do restartu. Obraz Dockera kopiuje całe drzewo z `.git`, więc instalacja z `install.sh` po
+`git pull` daje `official`; nixpacks też kopiuje `.git`, a swój katalog `.nixpacks` dopisuje do kontekstu budowania,
+więc jest on w `.gitignore`. Każdy inny plik dopisany przed kompilacją daje `modified`.
 
 ## Dostęp
 

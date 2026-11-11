@@ -3,7 +3,6 @@ mod librus;
 // code has never met a real account. To turn it on: add `httpdate = "1"` to Cargo.toml, uncomment the line below,
 // then write the sign-in and data routes (see AGENTS.md).
 // mod vulcan;
-mod provenance;
 mod push;
 mod store;
 mod watch;
@@ -440,18 +439,20 @@ async fn inject(mut req: Request, next: Next) -> Result<Response, ApiError> {
     Ok(Response::from_parts(parts, Body::from(page)))
 }
 
-/// GitHub's word on an "official" build: its commit is on the official main branch. build.rs trusts the local clone,
-/// whose remote branches can be pointed anywhere (a fork with the official URL, `git update-ref`); this asks the
-/// repository itself. It only ever lowers the state.
+/// The official repository on GitHub. Changes only if the repository moves.
+const REPO: &str = "d3andark/dziennik";
+
+/// GitHub's word on an "official" build: its commit is on the official main branch. build.rs knows only that the tree
+/// is its commit unchanged; a local clone's remote branches can be pointed anywhere (a fork with the official URL,
+/// `git update-ref`), so the repository itself is asked. It only ever lowers the state.
 // shortcut: asked once at start, so a GitHub outage reads as unknown until the next restart; retry if that bites.
 async fn confirm(http: &reqwest::Client, github: &str, state: &'static str, commit: &str) -> &'static str {
     if state != "official" {
         return state;
     }
-    let repo = provenance::OFFICIAL.trim_start_matches("github.com/");
     // For a commit on main the comparison lists no commits and no files, so the answer is small.
     let res = http
-        .get(format!("{github}/repos/{repo}/compare/main...{commit}"))
+        .get(format!("{github}/repos/{REPO}/compare/main...{commit}"))
         .header(header::USER_AGENT, "dziennik")
         .header(header::ACCEPT, "application/vnd.github+json")
         .send()

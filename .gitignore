@@ -5,3 +5,5 @@ web/node_modules
 web/dist
 web/dist-demo
 .env
+# nixpacks writes its build plan into the build context, next to the sources build.rs checks.
+.nixpacks

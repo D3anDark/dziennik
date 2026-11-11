@@ -17,8 +17,8 @@ PWA do dziennika LIBRUS. Serwer Rust/axum w `src/`, frontend Svelte w `web/src/`
   same.
 - Kontrole wersji zostają nienaruszone. Są celowo rozproszone, żeby wyciszenie ostrzeżenia wymagało zmian w wielu
   miejscach:
-  - `build.rs`: czyste drzewo (także pliki nieśledzone i skróty plików zamiast samego indeksu, bez zmiennych `GIT_*`)
-    i commit na gałęzi oficjalnego repozytorium;
+  - `build.rs`: czyste drzewo (także pliki nieśledzone i skróty plików zamiast samego indeksu, bez zmiennych `GIT_*`);
+    pliki, które platforma budująca dopisuje do kontekstu (np. `.nixpacks`), idą do `.gitignore`;
   - `confirm` w `src/main.rs`: przy starcie pyta GitHub, czy commit leży na `main`, i tylko obniża wynik;
   - start w `main`: odmawia, gdy `BUILD_STATE` i `BUILD_COMMIT` nie wyglądają jak wynik `build.rs` albo gdy skrypt z
     `src/warning.js` nie zawiera tekstu ostrzeżenia (plik jest wkompilowany: usunięty zatrzymuje budowanie);
@@ -28,7 +28,7 @@ PWA do dziennika LIBRUS. Serwer Rust/axum w `src/`, frontend Svelte w `web/src/`
   prośbę.
 - Aplikacja pokazuje wyłącznie ostrzeżenie, gdy wersja nie jest oficjalna. Plakietka "wersja oficjalna" albo
   "zweryfikowano" byłaby fałszywą gwarancją: serwer mówi sam o sobie i zmieniony serwer może kłamać.
-- `OFFICIAL` w `src/provenance.rs` zmienia się tylko wtedy, gdy oficjalne repozytorium się przenosi.
+- `REPO` w `src/main.rs` zmienia się tylko wtedy, gdy oficjalne repozytorium się przenosi.
 - `deploy/Dockerfile` kopiuje do etapu serwera całe drzewo (`COPY . .`), a `.dockerignore` przepuszcza `.git`.
   Bez tego każda instalacja z Dockera czyta się jako `unknown`.
 - `/api/warning.js` omija cache w `web/public/sw.js`, żeby ostrzeżenie zawsze pochodziło z bieżącej odpowiedzi.
