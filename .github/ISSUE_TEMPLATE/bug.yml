@@ -1,0 +1,46 @@
+name: Błąd
+description: Coś w aplikacji nie działa tak, jak powinno.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Zgłoszenie jest publiczne. Nie wpisuj tu loginu, hasła ani danych ze szkoły: ocen, wiadomości, imion i nazwisk. Na zrzucie ekranu zamaż je przed wysłaniem.
+  - type: textarea
+    id: what
+    attributes:
+      label: Co się stało
+      description: Co nie działa albo działa inaczej, niż powinno. Możesz wkleić zrzut ekranu.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Jak to powtórzyć
+      placeholder: |
+        1. Otwórz Oceny
+        2. Wybierz przedmiot
+        3. …
+  - type: textarea
+    id: expected
+    attributes:
+      label: Czego się spodziewasz
+  - type: input
+    id: server
+    attributes:
+      label: Adres aplikacji
+      description: Pod tym adresem widać, jaka wersja serwera tam działa.
+      placeholder: dziennik.example.pl
+  - type: dropdown
+    id: device
+    attributes:
+      label: Urządzenie
+      options:
+        - Telefon z Androidem
+        - iPhone albo iPad
+        - Komputer
+  - type: input
+    id: browser
+    attributes:
+      label: Przeglądarka
+      placeholder: np. Chrome, Safari, Firefox, aplikacja zainstalowana na ekranie

@@ -410,9 +410,10 @@ fn warning_script(text: &str) -> String {
     include_str!("warning.js").replace("__WARNING__", &json!(text).to_string())
 }
 
-/// The script `inject` puts into every page: a window with the warning, or nothing for an official build.
-async fn warning_js(State(app): Shared) -> Response {
-    let js = warning(app.build).map(warning_script);
+/// The script `inject` puts into every page: a window with the warning, or nothing for an official build. A signed-in
+/// session gets nothing as well: the warning is about giving the login and password, which it has already done.
+async fn warning_js(State(app): Shared, headers: HeaderMap) -> Response {
+    let js = warning(app.build).filter(|_| app.user(&headers).is_err()).map(warning_script);
     let headers = [(header::CONTENT_TYPE, "text/javascript; charset=utf-8"), (header::CACHE_CONTROL, "no-store")];
     (headers, js.unwrap_or_default()).into_response()
 }
@@ -739,6 +740,12 @@ mod tests {
         assert_eq!(script.headers()[header::CONTENT_TYPE], "text/javascript; charset=utf-8");
         let script = script.text().await.unwrap();
         assert!(script.contains("const text = \"Hostowana wersja serwera jest niezgodna z\u{a0}tą"), "{script}");
+        let script_for = async |sid: &str| {
+            let res = http.get(format!("{base}/api/warning.js")).header(header::COOKIE, format!("sid={sid}")).send().await;
+            res.unwrap().text().await.unwrap()
+        };
+        assert_eq!(script_for(&user).await, "", "a signed-in session is not warned again");
+        assert_eq!(script_for("forged").await, script, "a session the server never issued is still warned");
         assert_eq!(warning("official"), None, "an official build sends the script empty");
         assert!(warning("unknown").unwrap().starts_with("Nie da się potwierdzić"));
         std::fs::remove_dir_all(&web).unwrap();

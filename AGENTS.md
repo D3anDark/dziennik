@@ -13,8 +13,8 @@ PWA do dziennika LIBRUS. Serwer Rust/axum w `src/`, frontend Svelte w `web/src/`
 
 - Ostrzeżenie należy do backendu, nie do frontendu: frontend może napisać ktoś inny, a ostrzeżenie ma się pojawić i
   tak. `inject` w `src/main.rs` dopisuje do każdej strony HTML z `WEB_DIR` skrypt `/api/warning.js`
-  (`src/warning.js`), który przy wersji innej niż oficjalna pokazuje okno modalne. Frontendy nie implementują ostrzeżenia
-  same.
+  (`src/warning.js`), który przy wersji innej niż oficjalna pokazuje okno modalne. Zalogowana sesja dostaje pusty
+  skrypt: ostrzeżenie dotyczy podania loginu i hasła. Frontendy nie implementują ostrzeżenia same.
 - Kontrole wersji zostają nienaruszone. Są celowo rozproszone, żeby wyciszenie ostrzeżenia wymagało zmian w wielu
   miejscach:
   - `build.rs`: czyste drzewo (także pliki nieśledzone i skróty plików zamiast samego indeksu, bez zmiennych `GIT_*`);

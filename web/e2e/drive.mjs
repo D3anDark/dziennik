@@ -100,6 +100,52 @@ check('bad password message', alert[0] === 'Nieprawidłowy e-mail lub hasło.', 
 await fill('dobre');
 await until(`!!document.querySelector('header.bar select')`);
 await until(`document.querySelectorAll('main .events li').length > 0 && ${loaded}`);
+// Headless Chromium has no push service, so the browser side is a stub: what is checked is what the app does with it.
+const pushStub = `
+  const sub = { endpoint: 'https://fcm.googleapis.com/fcm/send/e2e', options: {}, toJSON() { return { endpoint: this.endpoint, keys: { p256dh: 'p', auth: 'a' } }; }, async unsubscribe() { window.__sub = null; return true; } };
+  PushManager.prototype.subscribe = async function (options) { window.__key = new Uint8Array(options.applicationServerKey).length; return (window.__sub = sub); };
+  PushManager.prototype.getSubscription = async () => window.__sub ?? null;
+  Notification.requestPermission = async () => 'granted';
+  Object.defineProperty(Notification, 'permission', { get: () => 'granted' });`;
+// Each step: its title and count, the lit rect, whether the card stays on screen and off the lit part.
+const tourStep = () =>
+  js(`(() => { const s = document.querySelector('dialog.tour .step'), spot = document.querySelector('dialog.tour .spot'); if (!s) return null;
+    const a = s.getBoundingClientRect(), b = spot.getBoundingClientRect();
+    return { title: s.querySelector('h2').textContent.replaceAll('\u00a0', ' '), count: s.querySelector('small').textContent.replaceAll('\u00a0', ' '),
+      spot: [b.left, b.top, b.width, b.height].map(Math.round),
+      apart: b.width === 0 || a.bottom <= b.top || a.top >= b.bottom || a.right <= b.left || a.left >= b.right,
+      inside: a.left >= 0 && a.top >= 0 && a.right <= innerWidth && a.bottom <= innerHeight }; })()`);
+const rectOf = (sel) => js(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return [r.left - 4, r.top - 4, r.width + 8, r.height + 8].map(Math.round); })()`);
+// Goes through the tour with Dalej, taking a shot or doing something on the steps named.
+const walkTour = async (shots = {}, actions = {}) => {
+  const steps = [];
+  for (let n = 0; n < 20; n++) {
+    await sleep(400); // the light moves in 300ms
+    const s = await tourStep();
+    steps.push(s);
+    if (shots[s.title]) await shot(shots[s.title]);
+    await actions[s.title]?.();
+    if (!(await clickText('dialog.tour button', n ? 'Dalej' : 'Pokaż'))) break;
+  }
+  return steps;
+};
+check('tour: opens once signed in, modal over the app, the focus on its first step', await until(`document.querySelector('dialog.tour')?.matches(':modal') === true`) &&
+  (await js(`document.activeElement?.textContent === 'Pokaż'`)));
+await shot('0-tour');
+const phoneTour = await walkTour({ Oceny: '0-tour-grades', Powiadomienia: '0-tour-push' });
+const phoneTitles = phoneTour.map((t) => t.title);
+check('tour (phone): every part in turn, the tab bar and the student switch, notifications offered last',
+  JSON.stringify(phoneTitles.slice(0, 8)) === JSON.stringify(['Witaj w Dzienniku', 'Start', 'Oceny', 'Plan', 'Wiadomości', 'Więcej', 'Uczeń', 'Odświeżanie']) &&
+  (phoneTitles.length === 8 || phoneTitles[8] === 'Powiadomienia') && phoneTour.at(-1).count === `${phoneTour.length} z ${phoneTour.length}`, phoneTitles);
+check('tour (phone): each card on screen and off the part it is about', phoneTour.every((t) => t.apart && t.inside), phoneTour.filter((t) => !t.apart || !t.inside));
+check('tour (phone): the light sits on the tab it names', JSON.stringify(phoneTour[2].spot) === JSON.stringify(await rectOf('.tabs a[href="#/oceny"]')), [phoneTour[2].spot, await rectOf('.tabs a[href="#/oceny"]')]);
+if (phoneTitles.at(-1) === 'Powiadomienia') check('tour: notifications can be turned on from the tour', await js(`[...document.querySelectorAll('dialog.tour button')].some((b) => b.textContent.trim() === 'Włącz powiadomienia')`));
+await clickText('dialog.tour button', 'Wstecz');
+await sleep(400);
+check('tour: Wstecz goes a step back', (await tourStep()).title === phoneTitles.at(-2));
+await clickText('dialog.tour button', 'Dalej');
+await clickText('dialog.tour button', 'Zaczynamy');
+check('tour: closed for good on this device', await until(`!document.querySelector('dialog.tour') && localStorage.getItem('tour-seen') === '1'`));
 const greeting = await text('.greeting > *');
 check('start is default page, opened by a greeting with the date and the lucky number', ['Dzień dobry', 'Dobry wieczór'].includes(greeting[0]) && /^\p{L}+, \d+ \p{L}+ · Szczęśliwy numerek 13$/u.test(greeting[1]) && !(await js(`!!document.querySelector('h1.title')`)), greeting);
 check('start: the page is named by the app alone', (await js('document.title')) === 'Dziennik', await js('document.title'));
@@ -285,6 +331,7 @@ await until(`!${hasButton('Zainstaluj aplikację')}`);
 check('install: the offer is held back, asked on the button, and the button goes once answered', (await js(`window.__prevented && window.__asked === true`)) && !(await js(hasButton('Zainstaluj aplikację'))));
 check('more: account and logout live here', (await mainText()).includes('Zalogowano jako rodzic@example.com') && (await js(hasButton('Wyloguj'))));
 await shot('5-more');
+check('more: a bug report opens the issues apart from the app', await js(`(() => { const a = [...document.querySelectorAll('main a')].find((e) => e.textContent.trim() === 'Zgłoś błąd'); return a?.href === 'https://github.com/D3anDark/dziennik/issues/new?template=bug.yml&server=127.0.0.1%3A18081' && a.target === '_blank'; })()`));
 
 await go('#/terminarz', `document.querySelectorAll('main .events li').length > 0`);
 const cal = await text('main .events li strong');
@@ -293,6 +340,35 @@ check('calendar: range end shown', (await mainText()).includes('do '));
 check('more tab current on subpage', (await text('nav.tabs a[aria-current=page]'))[0]?.endsWith('Więcej'));
 check('subpage: a way back to the menu', (await js(`document.querySelector('main a.back')?.getAttribute('href')`)) === '#/wiecej' && (await text('main a.back'))[0] === 'Więcej');
 await shot('6-calendar');
+const isoDay = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return [d.getFullYear(), d.getMonth() + 1, d.getDate()]; };
+const [ty, tm, td] = isoDay(0);
+const inMonth = (n) => { const [y, m] = isoDay(n); return y === ty && m === tm; };
+const grid = await js(`(() => { const g = document.querySelector('.month .grid'); return { days: g.querySelectorAll('button').length, lead: [...g.children].findIndex((c) => c.tagName === 'BUTTON'), rows: g.children.length % 7,
+  today: g.querySelector('[aria-current=date] .num')?.textContent }; })()`);
+check('calendar: a month grid, Monday first, today marked', grid.days === new Date(ty, tm, 0).getDate() && grid.lead === (new Date(ty, tm - 1, 1).getDay() + 6) % 7 && grid.rows === 0 && grid.today === String(td), grid);
+const dayButton = (n) => `[...document.querySelectorAll('.month .grid button')].find((b) => b.querySelector('.num').textContent === '${isoDay(n)[2]}')`;
+if (inMonth(2)) {
+  const two = await js(`(() => { const b = ${dayButton(2)}; return { names: [...b.querySelectorAll('.ev')].map((m) => m.className + ' ' + m.textContent), label: b.getAttribute('aria-label') }; })()`);
+  check('calendar: a day names what is on it, its kind by colour, and says how many in words', JSON.stringify(two.names) === JSON.stringify(['ev event Sprawdzian: Matematyka', 'ev teacher Nieobecność nauczyciela: Piotr']) &&
+    two.label.endsWith('2 wpisy: Sprawdzian: Matematyka; Nieobecność nauczyciela: Piotr'), two);
+}
+if (inMonth(5) && inMonth(6)) check('calendar: a free day spanning two days tints and names both', await js(`[5, 6].every((n) => { const b = n === 5 ? ${dayButton(5)} : ${dayButton(6)}; return b.classList.contains('free') && b.querySelector('.ev.free')?.textContent === 'Wycieczka klasowa'; }) && !${dayButton(4)}.classList.contains('free')`));
+await until(`document.querySelectorAll('.soon li').length === 3`);
+const soonTiles = await text('.soon li strong');
+check('calendar: the three nearest entries as tiles', JSON.stringify(soonTiles) === JSON.stringify(['Sprawdzian: Matematyka', 'Nieobecność nauczyciela: Piotr', 'Wycieczka klasowa']), soonTiles);
+await js(`[...document.querySelectorAll('.soon button')][2].click()`);
+await until(`document.querySelectorAll('main .events li').length === 1 && ${loaded}`);
+check('calendar: a tile opens its day, the list down to that day', JSON.stringify(await text('main .events li strong')) === JSON.stringify(['Wycieczka klasowa']) &&
+  (await js(`${dayButton(5)}.getAttribute('aria-pressed')`)) === 'true' && (await js(hasButton('Cały miesiąc'))));
+check('calendar: on a phone the picked day\'s entries are scrolled into sight', await js(`(() => { const r = document.querySelector('main .events li').getBoundingClientRect(); return r.top >= 0 && r.bottom <= document.querySelector('.tabs').getBoundingClientRect().top; })()`));
+await shot('6-calendar-day');
+await clickText('main button', 'Cały miesiąc');
+check('calendar: and back to the whole month', await until(`document.querySelectorAll('main .events li').length > 1 && !document.querySelector('.month [aria-pressed=true]')`));
+await clickText('main button', 'Dziś');
+await until(`document.querySelector('.month [aria-current=date]') && ${loaded}`);
+const empty = await js(`(() => { const b = [...document.querySelectorAll('.month .grid button')].find((b) => !b.querySelector('.ev')); b.click(); return b.getAttribute('aria-label'); })()`);
+check('calendar: a day with nothing says so', await until(`document.querySelector('main .swipe')?.innerText.includes('Tego dnia nic nie ma.')`), empty);
+await clickText('main button', 'Cały miesiąc');
 await js(`document.querySelector('[aria-label="Następny miesiąc"]').click()`);
 await until(loaded);
 const m2 = new Date(); m2.setMonth(m2.getMonth() + 1, 1);
@@ -480,13 +556,7 @@ check('topics: older days on demand', (await js(`document.querySelectorAll('main
 await shot('15-topics');
 
 // Headless Chromium has no push service, so the browser side is a stub: what is checked is what the app does with it.
-await js(`(() => {
-  const sub = { endpoint: 'https://fcm.googleapis.com/fcm/send/e2e', options: {}, toJSON() { return { endpoint: this.endpoint, keys: { p256dh: 'p', auth: 'a' } }; }, async unsubscribe() { window.__sub = null; return true; } };
-  PushManager.prototype.subscribe = async function (options) { window.__key = new Uint8Array(options.applicationServerKey).length; return (window.__sub = sub); };
-  PushManager.prototype.getSubscription = async () => window.__sub ?? null;
-  Notification.requestPermission = async () => 'granted';
-  Object.defineProperty(Notification, 'permission', { get: () => 'granted' });
-})()`);
+await js(`(() => {${pushStub}})()`);
 await go('#/powiadomienia', hasButton('Włącz powiadomienia'));
 check('push: offered while this device is not subscribed', (await js(hasButton('Włącz powiadomienia'))) && !(await mainText()).includes('Włączone'), await mainText());
 await clickText('main button', 'Włącz powiadomienia');
@@ -663,8 +733,44 @@ await fetch(`${base}/__twins`);
 await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 // A desktop with a mouse: fine pointer, so the denser sidebar rows apply.
 await send('Emulation.setTouchEmulationEnabled', { enabled: false });
+// The tour again, as a first start on a computer would have it, where the browser offers to install the app and
+// notifications can be turned on: both stubbed from the page's first line, before the app listens.
+await js(`localStorage.removeItem('tour-seen')`);
+const { identifier: stubs } = await send('Page.addScriptToEvaluateOnNewDocument', { source: `${pushStub}
+  const add = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function (type, fn, ...rest) {
+    add.call(this, type, fn, ...rest);
+    if (type === 'beforeinstallprompt') queueMicrotask(() => { const e = new Event(type, { cancelable: true }); e.prompt = () => (window.__asked = true); e.userChoice = Promise.resolve({ outcome: 'accepted' }); fn(e); });
+  };` });
 await send('Page.reload');
 await until(`!!document.querySelector('.side .nav-row[aria-current=page]')`);
+await until(`document.querySelector('dialog.tour')?.open === true`);
+let installed = false, subscribed = false;
+const deskTour = await walkTour({ 'Reszta dziennika': '20-desktop-tour', 'Zainstaluj aplikację': '20-desktop-tour-install' }, {
+  'Zainstaluj aplikację': async () => {
+    await clickText('dialog.tour button', 'Zainstaluj aplikację');
+    installed = (await until('window.__asked === true')) && (await until(`![...document.querySelectorAll('dialog.tour button')].some((b) => b.textContent.trim() === 'Zainstaluj aplikację')`));
+  },
+  Powiadomienia: async () => {
+    await clickText('dialog.tour button', 'Włącz powiadomienia');
+    subscribed = (await until(`document.querySelector('dialog.tour')?.innerText.includes('Włączone.')`)) &&
+      (await log()).includes('POST /api/push {"endpoint": "https://fcm.googleapis.com/fcm/send/e2e", "keys": {"auth": "a", "p256dh": "p"}}');
+    await shot('20-desktop-tour-push');
+  },
+});
+await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: stubs });
+const deskTitles = deskTour.map((t) => t.title);
+check('tour (desktop): the sidebar instead of the tabs, the bug report, then installing and notifications',
+  JSON.stringify(deskTitles) === JSON.stringify(['Witaj w Dzienniku', 'Start', 'Oceny', 'Plan', 'Wiadomości', 'Reszta dziennika', 'Uczeń', 'Odświeżanie', 'Zgłoś błąd', 'Zainstaluj aplikację', 'Powiadomienia']), deskTitles);
+check('tour: installs the app on the browser\'s offer', installed);
+check('tour: turns notifications on, the device registered with the server', subscribed, (await log()).filter((l) => l.includes('/api/push')));
+check('tour (desktop): each card on screen and off the part it is about', deskTour.every((t) => t.apart && t.inside), deskTour.filter((t) => !t.apart || !t.inside));
+await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+check('tour: Esc closes it for good as well', await until(`!document.querySelector('dialog.tour') && localStorage.getItem('tour-seen') === '1'`));
+await send('Page.reload');
+await until(`!!document.querySelector('.side .nav-row[aria-current=page]')`);
+check('tour: not again after a reload', !(await js(`!!document.querySelector('dialog.tour')`)));
 await go('#/start', `document.querySelectorAll('main .events li').length > 0 && ${loaded}`);
 const displayed = (sel) => js(`getComputedStyle(document.querySelector(${JSON.stringify(sel)})).display !== 'none'`);
 check('desktop: a sidebar replaces the bar and the tabs', (await displayed('.side')) && !(await displayed('.bar')) && !(await displayed('.tabs')));
@@ -675,6 +781,10 @@ check('desktop: accounts with one name are told apart, a pupil from a parent', J
 check('phone: the picker carries the same hint', JSON.stringify(await js(`[...document.querySelectorAll('.bar option')].map((o) => o.textContent)`)) === JSON.stringify(['Jan Testowy · uczeń', 'Jan Testowy · rodzic']));
 check('desktop: start page lays its panels out in two columns', await js(`(() => { const [a, b] = document.querySelectorAll('.panels > .col'); return a.getBoundingClientRect().top === b.getBoundingClientRect().top && document.documentElement.scrollWidth <= innerWidth; })()`));
 await shot('20-desktop-start');
+check('desktop: a long e-mail ends in an ellipsis, the bug report and logout stay in the sidebar', await js(`(() => { const s = document.querySelector('.side'), small = s.querySelector('.me small'), was = small.textContent; small.textContent = 'bardzo.dlugi.adres.rodzica.ucznia@example.com'; const fits = s.scrollWidth <= s.clientWidth && small.scrollWidth > small.clientWidth; small.textContent = was; return fits && !!s.querySelector('.me a[aria-label="Zgłoś błąd"][href*="/issues/new?template=bug.yml"]'); })()`));
+await go('#/terminarz', `document.querySelectorAll('.soon li').length === 3 && ${loaded}`);
+check('desktop calendar: the month and its tiles beside the list', await js(`(() => { const [a, b] = document.querySelectorAll('.panels > .col'); return a.getBoundingClientRect().right <= b.getBoundingClientRect().left; })()`));
+await shot('21-desktop-calendar');
 await clickText('.side .nav-row .grow', 'Oceny');
 await until(`document.querySelector('h1.title')?.textContent === 'Oceny' && ${loaded}`);
 check('desktop: the sidebar navigates and marks the place', (await text('.side .nav-row[aria-current=page]'))[0] === 'Oceny');
@@ -687,6 +797,8 @@ check('desktop grades: an opened grade sits under its chips, not under a subject
 await shot('21-desktop-grades-long');
 await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
 await go('#/aktywnosc', loaded);
+await go('#/terminarz', `document.querySelectorAll('.soon li').length === 3 && ${loaded}`);
+await shot('22-desktop-calendar-dark');
 await go('#/start', `document.querySelectorAll('main .events li').length > 0 && ${loaded}`);
 await shot('22-desktop-start-dark');
 await send('Emulation.setEmulatedMedia', { features: [] });

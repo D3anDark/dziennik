@@ -39,13 +39,18 @@ for (const [size, width, height, mobile] of [['phone', 390, 844, true], ['deskto
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
   await send('Page.navigate', { url: `${base}/#/start` });
   check(`${size}: opens signed in, the demo said so`, await until(`${loaded} && document.querySelector('.banner')?.innerText.startsWith('Wersja demo:')`));
+  if (size === 'phone') {
+    check('the tour opens on the first start', await until(`document.querySelector('dialog.tour')?.open === true`));
+    await js(`[...document.querySelectorAll('dialog.tour button')].find((b) => b.textContent === 'Pomiń').click()`);
+    check('the tour is skipped for good', await until(`!document.querySelector('dialog.tour') && localStorage.getItem('tour-seen') === '1'`));
+  }
   for (const view of VIEWS) {
     await js(`location.hash = '#/${view}'`);
     const ok = await until(`${loaded} && document.querySelector('main').innerText.trim().length > 40`);
     await sleep(150);
     const alert = await js(`document.querySelector('main [role=alert], main .error')?.innerText ?? ''`);
     check(`${size}: ${view} shows data`, ok && !alert && !(await js(`[...document.querySelectorAll('main p.center.muted')].some((p) => p.innerText.startsWith('Brak'))`)), alert);
-    if (size === 'phone' || ['start', 'oceny', 'plan'].includes(view)) {
+    if (size === 'phone' || ['start', 'oceny', 'plan', 'terminarz'].includes(view)) {
       const { data } = await send('Page.captureScreenshot', { format: 'png' });
       await writeFile(`${out}/demo-${size}-${view}.png`, Buffer.from(data, 'base64'));
     }
@@ -69,6 +74,19 @@ await js(`document.querySelector('.side .account:not([aria-pressed=true])').clic
 check('the second child has data of its own', await until(`${loaded} && document.querySelector('main').innerText.includes('Ostatnie oceny') && document.querySelector('.side .account[aria-pressed=true]').innerText.includes('Antoni')`));
 const attachment = await js(`fetch('zalacznik.pdf').then((r) => r.ok && r.headers.get('content-type'))`);
 check('the attachment file is served next to the app', String(attachment).includes('pdf'), attachment);
+
+await js(`location.hash = '#/terminarz'`);
+await until(`${loaded} && document.querySelectorAll('main .events li').length > 0`);
+const dayCards = `document.querySelectorAll('main .swipe section').length`;
+const moreButton = `[...document.querySelectorAll('main button')].find((b) => b.textContent === 'Pokaż więcej')`;
+const first = await js(`[${dayCards}, !!${moreButton}]`);
+check('calendar: the list shows three days and offers the rest', first[0] === 3 && first[1], first);
+await js(`${moreButton}.click()`);
+check('calendar: every day once asked, the button gone', await until(`${dayCards} > 3 && !${moreButton}`));
+await js(`document.querySelector('.pager button[aria-label="Następny miesiąc"]').click()`);
+await until(loaded);
+await js(`document.querySelector('.pager button[aria-label="Poprzedni miesiąc"]').click()`);
+check('calendar: another month and back starts short again', await until(`${loaded} && ${dayCards} === 3 && !!${moreButton}`), await js(dayCards));
 
 check('no console errors/exceptions', problems.length === 0, problems);
 process.exit(0);

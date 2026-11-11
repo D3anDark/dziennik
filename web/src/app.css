@@ -798,6 +798,9 @@ main h1:focus {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* A grid item sizes to its content, the whole e-mail: without this a long one pushes the buttons out instead of
+     ending in an ellipsis. */
+  min-width: 0;
   padding-left: var(--space-3);
 }
 
@@ -873,6 +876,65 @@ main h1:focus {
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 500;
+}
+
+/* The first-start tour, the app's one modal: the whole screen, dimmed by the light around the part a step is about. */
+.tour {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+.tour::backdrop {
+  background: transparent;
+}
+
+.tour .spot {
+  position: fixed;
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.55);
+  pointer-events: none;
+  transition-property: top, left, width, height;
+  transition-duration: 300ms;
+  transition-timing-function: var(--ease);
+}
+
+.tour .step {
+  position: fixed;
+  display: grid;
+  gap: var(--space-3);
+  max-height: calc(100% - 2 * var(--space-4));
+  overflow-y: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tour h2 {
+  margin: var(--space-1) 0 var(--space-1);
+  font-size: 1.125rem;
+}
+
+.tour .step p {
+  margin: 0;
+}
+
+.tour .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.tour .actions .link {
+  margin-right: auto;
 }
 
 /* Today's day in the plan: its heading in the one hue, like today's date in the day strip. */
@@ -982,6 +1044,11 @@ section.card.today > h2 {
 
   .panels > .col {
     display: grid;
+  }
+
+  /* The month wants room for the words in its days more than the list beside it. */
+  .panels.cal {
+    grid-template-columns: 3fr 2fr;
   }
 }
 
@@ -1335,6 +1402,241 @@ section.card.today > h2 {
 .dot.on.alert {
   background: var(--danger);
   box-shadow: none;
+}
+
+/* Terminarz: the month as a grid with lines, each day naming what is on it; a free day tinted whole. */
+.month {
+  overflow: hidden;
+  padding: 0;
+  touch-action: pan-y pinch-zoom;
+}
+
+.month .weekdays,
+.month .grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.month .weekdays {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+/* The lines between days are the grid's background showing through a 1px gap. */
+.month .grid {
+  gap: 1px;
+  background: var(--rule);
+}
+
+.month .grid > * {
+  min-height: 68px;
+  background: var(--surface);
+}
+
+/* The days around the month belong to the months either side. */
+.month .grid > span {
+  background: var(--bg);
+}
+
+.month .grid button {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-1) 3px;
+  border: 0;
+  border-radius: 0;
+  font-weight: 400;
+}
+
+.month .grid button:active {
+  transform: none;
+}
+
+.month .num {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.month .weekend .num {
+  color: var(--muted);
+}
+
+.month .grid .free {
+  background: var(--ok-soft);
+}
+
+.month [aria-current='date'] .num {
+  background: var(--mark);
+  color: var(--bg);
+}
+
+.month [aria-pressed='true'] {
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+
+/* An entry's kind by its colour, its name in its own words: a label in a day, a square on a tile. */
+.ev,
+.mark {
+  --kind: var(--mark);
+  --kind-soft: var(--mark-soft);
+}
+
+.ev.teacher,
+.mark.teacher {
+  --kind: var(--muted);
+  --kind-soft: var(--raised);
+}
+
+.ev.meeting,
+.mark.meeting {
+  --kind: var(--g3-text);
+  --kind-soft: var(--g3);
+}
+
+.ev.free,
+.mark.free {
+  --kind: var(--ok);
+  --kind-soft: var(--ok-soft);
+}
+
+/* Two lines of a title, broken between words. */
+.ev {
+  display: -webkit-box;
+  overflow: hidden;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: var(--kind-soft);
+  color: var(--kind);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* On the tinted day its own label goes plain, or it would vanish into the tint. */
+.ev.free {
+  background: transparent;
+  padding-inline: 0;
+}
+
+.more {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.mark {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--kind);
+}
+
+/* A phone's day is too narrow for a word: its entries become bars in their colour, named in the list below. */
+@media (max-width: 599px) {
+  .month .grid > * {
+    min-height: 56px;
+  }
+
+  .ev {
+    height: 4px;
+    padding: 0;
+    border-radius: 2px;
+    background: var(--kind);
+    font-size: 0;
+  }
+
+  .ev.free {
+    display: none;
+  }
+
+  .more {
+    font-size: 0.625rem;
+    line-height: 1;
+    text-align: center;
+  }
+}
+
+@media (min-width: 900px) {
+  .month .grid > * {
+    min-height: 80px;
+  }
+}
+
+/* The next three entries as small tiles in a row, over the month; a tile opens its day in it. */
+.soon {
+  margin-bottom: var(--space-4);
+}
+
+.soon .section {
+  margin-top: 0;
+}
+
+/* The month's days, one card each: in the panels the cards lose their margin, so the gap is the list's own. */
+.panels .swipe {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.soon ul {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.soon button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  justify-items: start;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  min-height: 84px;
+  padding: var(--space-2) 10px;
+  border-radius: var(--radius);
+  font-weight: 400;
+  text-align: left;
+}
+
+.soon small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.soon strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 
@@ -2246,5 +2548,9 @@ article.note > .rich {
   .icon-btn.busy .icon {
     animation: none;
     opacity: 0.5;
+  }
+
+  .tour .spot {
+    transition-duration: 0ms;
   }
 }

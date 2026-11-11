@@ -22,6 +22,7 @@
   import Activity from './Activity.svelte';
   import Install from './Install.svelte';
   import Privacy from './Privacy.svelte';
+  import Tour from './Tour.svelte';
   import { sync as syncPush, disable as disablePush } from './push.js';
 
   const PAGES = {
@@ -44,6 +45,8 @@
     prywatnosc: { label: 'Prywatność', icon: 'eye', view: Privacy, global: true },
   };
   const TABS = ['start', 'oceny', 'plan', 'wiadomosci'];
+  // The form in .github/ISSUE_TEMPLATE/bug.yml, its `server` field filled in.
+  const ISSUES = `https://github.com/D3anDark/dziennik/issues/new?template=bug.yml&server=${encodeURIComponent(location.host)}`;
   const visible = (p) => Object.hasOwn(PAGES, p) && (!PAGES[p].admin || Boolean(session.me?.admin));
   const more = $derived(Object.keys(PAGES).filter((p) => !TABS.includes(p) && visible(p)));
   const STUDENT_KEY = 'student';
@@ -247,6 +250,8 @@
         <Install row />
         <div class="me">
           <small class="muted grow">{session.me.email}</small>
+          <!-- An icon beside the logout one: a row of its own would make a 1280×800 sidebar scroll. -->
+          <a class="button icon-btn" href={ISSUES} target="_blank" rel="noopener" aria-label="Zgłoś błąd" title="Zgłoś błąd"><Icon name="flag" size={18} /></a>
           <button class="icon-btn" onclick={logout} aria-label="Wyloguj" title="Wyloguj"><Icon name="logout" size={18} /></button>
         </div>
       </div>
@@ -310,6 +315,7 @@
             {/if}
           {/each}
           <Install />
+          <a class="button wide" href={ISSUES} target="_blank" rel="noopener"><Icon name="flag" size={20} />Zgłoś błąd</a>
           <p class="center muted">Zalogowano jako {session.me.email}</p>
           <button class="secondary wide" onclick={logout}><Icon name="logout" size={20} />Wyloguj</button>
           {#if forgetError}<p class="error" role="alert">{forgetError}</p>{/if}
@@ -339,4 +345,5 @@
       {/each}
     </nav>
   </div>
+  <Tour several={accounts.length > 1} />
 {/if}

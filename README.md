@@ -87,9 +87,9 @@ serwer nie sprawdza: da się je przestawić dowolnie, a platformy budujące mog�
 oraz log startu. Gdy wynik nie jest `official`, ostrzeżenie pokazuje sam serwer, niezależnie od frontendu: do każdej
 strony HTML, którą serwuje z `WEB_DIR` (nasz frontend albo dowolny inny), dopisuje skrypt `/api/warning.js`, a ten
 otwiera okno modalne: "Hostowana wersja serwera jest niezgodna z tą na oficjalnym repozytorium. Jeżeli nie ufasz
-osobie hostującej ten projekt, nie podawaj swojego loginu i hasła." Przy wersji oficjalnej skrypt jest pusty. Serwer
-nie startuje, gdy wynik `build.rs` wygląda na podmieniony albo gdy skrypt ostrzeżenia (`src/warning.js`, wkompilowany
-w serwer) go nie pokazuje.
+osobie hostującej ten projekt, nie podawaj swojego loginu i hasła." Przy wersji oficjalnej skrypt jest pusty, tak samo
+dla zalogowanej sesji, która login i hasło już podała. Serwer nie startuje, gdy wynik `build.rs` wygląda na
+podmieniony albo gdy skrypt ostrzeżenia (`src/warning.js`, wkompilowany w serwer) go nie pokazuje.
 
 To sygnał, nie zabezpieczenie. Kontrole są rozproszone, więc wyciszenie ostrzeżenia wymaga zmian w kilku miejscach
 kodu, ale serwer mówi sam o sobie: nieuczciwy operator usunie je wszystkie, a z przeglądarki nie da się sprawdzić,

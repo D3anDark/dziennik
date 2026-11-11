@@ -1,5 +1,5 @@
 <script>
-  import { install } from './api.svelte.js';
+  import { install, byHand } from './api.svelte.js';
   import Icon from './Icon.svelte';
 
   /**
@@ -7,9 +7,6 @@
    * Renders nothing once the app runs installed. `row` styles the button as a sidebar row.
    */
   let { row = false } = $props();
-  // Only Safari on iOS and iPadOS has navigator.standalone; false there means a browser tab, where installing is
-  // done by hand from the share sheet.
-  const byHand = navigator.standalone === false;
 
   async function ask() {
     const event = install.event;

@@ -25,6 +25,9 @@ addEventListener('beforeinstallprompt', (e) => {
   install.event = e;
 });
 addEventListener('appinstalled', () => (install.event = null));
+/** Only Safari on iOS and iPadOS has navigator.standalone; false there means a browser tab, where installing is done by
+ *  hand from the share sheet. */
+export const byHand = navigator.standalone === false;
 
 /** `ready` once sw.js has taken over with a build newer than the one running (main.js). */
 export const update = $state({ ready: false });
