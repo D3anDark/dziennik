@@ -1,7 +1,7 @@
 <script>
   import { api, session, message, clearApiCache } from './api.svelte.js';
   import { disable as disablePush } from './push.js';
-  import { stored, choiceOf, applyTheme, short, mail, FORCED_KEY, SHORT_KEY, TOUR_KEY, PLUS, MINUS, YEAR, PLAN, THEME } from './util.js';
+  import { stored, choiceOf, applyTheme, short, mail, FORCED_KEY, SHORT_KEY, TOUR_KEY, PLUS, MINUS, YEAR, PLAN, THEME, TONES, ATTENDANCE } from './util.js';
   import Icon from './Icon.svelte';
   import Install from './Install.svelte';
 
@@ -16,6 +16,8 @@
   let year = $state(choiceOf(YEAR));
   let theme = $state(choiceOf(THEME));
   let plan = $state(choiceOf(PLAN));
+  /** The tint of each kind of attendance mark, by the kind's id. */
+  let tones = $state(Object.fromEntries([...ATTENDANCE].map(([std, kind]) => [std, choiceOf(kind)])));
   const comma = (v) => v.replace('.', ',');
 
   /** Writes the switch; without storage it cannot be kept, so the box goes back to what holds. */
@@ -87,6 +89,24 @@
   <p class="muted">
     Automatycznie plan pokazuje dzień na telefonie, a&nbsp;tydzień na szerokim ekranie. Przełącznik w&nbsp;samym planie
     zapisuje swój wybór tutaj.
+  </p>
+</section>
+
+<section class="card">
+  <h2>Kolory frekwencji</h2>
+  {#each [...ATTENDANCE] as [std, kind] (std)}
+    <h3 class="section" id="tone-{std}">{kind.label}</h3>
+    <div class="swatches" role="group" aria-labelledby="tone-{std}">
+      {#each TONES as [t, name] (t)}
+        <button class="chip {t}" aria-pressed={tones[std] === t} aria-label={name} title={name} onclick={() => pick(kind, t) && (tones[std] = t)}>{kind.sample}</button>
+      {/each}
+    </div>
+  {/each}
+  <p class="muted">
+    Kolor znaczka przy wpisie we Frekwencji. Rodzaje wpisów, które szkoła dodała sama, zostają szare.
+    {#if [...ATTENDANCE].some(([std, kind]) => tones[std] !== kind.options[0])}
+      <button class="link" onclick={() => [...ATTENDANCE].forEach(([std, kind]) => pick(kind, kind.options[0]) && (tones[std] = kind.options[0]))}>Przywróć domyślne</button>
+    {/if}
   </p>
 </section>
 

@@ -2110,6 +2110,24 @@ button.chip {
 .g3 { background: var(--g3); color: var(--g3-text); }
 .g2 { background: var(--g2); color: var(--g2-text); }
 .g1 { background: var(--g1); color: var(--g1-text); }
+/* The one blue as a tint: a mark of attendance may take it. */
+.blue { background: var(--mark-soft); color: var(--mark); }
+
+/* The tints a mark can take, to pick one: the picked one in a ring. */
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* All seven on one line of a phone. */
+.swatches .chip {
+  padding: 0;
+}
+
+.swatches [aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink);
+}
 
 /* Under the chips, not under the label: the label column is 6.5em of 0.875rem. */
 .detail {

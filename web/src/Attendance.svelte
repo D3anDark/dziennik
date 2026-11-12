@@ -1,6 +1,6 @@
 <script>
   import { synergia, lookup, resource, byId } from './api.svelte.js';
-  import { fmtDate, fmtPercent } from './util.js';
+  import { fmtDate, fmtPercent, choiceOf, ATTENDANCE } from './util.js';
   import Async from './Async.svelte';
 
   let { login } = $props();
@@ -9,13 +9,9 @@
   const PRESENCE = 100;
   const UNEXCUSED = 1;
   const ABSENCES = new Set([UNEXCUSED, 3]);
-  /** What is not plain presence, in the order it is listed: what it is called here and the tint of its mark. */
-  const KINDS = new Map([
-    [UNEXCUSED, { label: 'Nieusprawiedliwione', word: 'Nieuspr.', tone: 'g1' }],
-    [3, { label: 'Usprawiedliwione', word: 'Uspr.', tone: 'g0' }],
-    [2, { label: 'Spóźnienia', word: 'Spóźn.', tone: 'g0' }],
-    [4, { label: 'Zwolnienia', word: 'Zwoln.', tone: 'g0' }],
-  ]);
+  /** The tint of a kind's mark, as picked in "Ustawienia" (util.js); a kind a school made up is grey. */
+  const tones = new Map([...ATTENDANCE].map(([std, kind]) => [std, choiceOf(kind)]));
+  const tone = (std) => tones.get(std) ?? 'g0';
   const pct = (absent, all) => (all ? fmtPercent((all - absent) / all) : '');
 
   async function load(login) {
@@ -30,17 +26,16 @@
       const type = types.get(String(x.Type?.Id));
       const std = Number(type ? (type.Standard ? type.Id : type.StandardType?.Id) : x.Type?.Id);
       const subject = subjects.get(String(lessons.get(String(x.Lesson?.Id))?.Subject?.Id))?.Name ?? 'Inne';
-      const tone = KINDS.get(std)?.tone ?? 'g0';
-      return { id: x.Id, date: x.Date, no: x.LessonNo, std, tone, subject, name: type?.Name ?? 'Nieznany', short: type?.Short ?? '?' };
+      return { id: x.Id, date: x.Date, no: x.LessonNo, std, subject, name: type?.Name ?? 'Nieznany', short: type?.Short ?? '?' };
     });
     const entries = all
       .filter((x) => x.std !== PRESENCE)
       .sort((p, q) => q.date.localeCompare(p.date) || Number(q.no) - Number(p.no));
     // Both kinds of absence are always listed, a zero included: whether any is unexcused is what the screen is for.
-    const kinds = new Map([...KINDS].map(([std, k]) => [std, { std, ...k, short: types.get(String(std))?.Short ?? '', n: 0 }]));
+    const kinds = new Map([...ATTENDANCE].map(([std, k]) => [std, { std, label: k.label, word: k.word, short: types.get(String(std))?.Short ?? '', n: 0 }]));
     for (const e of entries) {
       // A kind this list does not know keeps the school's own name for it.
-      if (!kinds.has(e.std)) kinds.set(e.std, { std: e.std, label: e.name, tone: e.tone, short: e.short, n: 0 });
+      if (!kinds.has(e.std)) kinds.set(e.std, { std: e.std, label: e.name, short: e.short, n: 0 });
       kinds.get(e.std).n++;
     }
     const per = new Map();
@@ -75,7 +70,7 @@
       <ul class="totals">
         {#each d.kinds as k (k.std)}
           <li>
-            <span class="kind"><span class="chip static {k.tone}">{k.short}</span> {k.label}</span>
+            <span class="kind"><span class="chip static {tone(k.std)}">{k.short}</span> {k.label}</span>
             <strong class:alert={k.std === UNEXCUSED && k.n > 0}>{k.n}</strong>
           </li>
         {/each}
@@ -116,7 +111,7 @@
         <ul class="entries">
           {#each only === null ? d.entries : d.entries.filter((e) => e.std === only) as e (e.id)}
             <li>
-              <span class="chip static {e.tone}" title={e.name}>{e.short}</span>
+              <span class="chip static {tone(e.std)}" title={e.name}>{e.short}</span>
               <span>{e.subject}<small class="muted">{fmtDate(e.date)}, lekcja {e.no}</small></span>
               <span class="vh">{e.name}</span>
             </li>

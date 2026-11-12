@@ -107,6 +107,23 @@ export const MINUS = { key: 'minus-worth', options: ['0.25', '0.33', '0.5', '0']
 /** The year's average the app counts: from every grade of the year, or as the mean of the two semesters' averages. */
 export const YEAR = { key: 'year-average', options: ['all', 'halves'] };
 
+/** The tints a mark can take (app.css), with their names: the grade scale's and the one blue. */
+export const TONES = [['g1', 'czerwony'], ['g2', 'pomarańczowy'], ['g3', 'żółty'], ['g4', 'limonkowy'], ['g5', 'zielony'], ['blue', 'niebieski'], ['g0', 'szary']];
+
+/**
+ * The standard kinds of attendance entry that are not plain presence, by Synergia's id and in the order they are
+ * listed: what each is called, in full and short, the symbol schools usually give it, and the tint of its mark,
+ * picked in "Ustawienia" with the default first. A kind a school made up stays grey.
+ */
+export const ATTENDANCE = new Map(
+  [
+    [1, 'Nieusprawiedliwione', 'Nieuspr.', 'nb', 'g1'],
+    [3, 'Usprawiedliwione', 'Uspr.', 'u', 'g5'],
+    [2, 'Spóźnienia', 'Spóźn.', 'sp', 'blue'],
+    [4, 'Zwolnienia', 'Zwoln.', 'zw', 'g3'],
+  ].map(([std, label, word, sample, tone]) => [std, { label, word, sample, key: `attendance-tone/${std}`, options: [tone, ...TONES.map(([t]) => t).filter((t) => t !== tone)] }]),
+);
+
 /** Set once the first-run tour was seen or skipped (Tour.svelte); "Ustawienia" drops it to show the tour again. */
 export const TOUR_KEY = 'tour-seen';
 

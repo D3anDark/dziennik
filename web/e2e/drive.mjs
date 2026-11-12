@@ -389,7 +389,7 @@ check('attendance: percentage, and unexcused absences counted apart from excused
 const per = await rows('main section:nth-of-type(2) .totals li');
 check('attendance: per subject, the unexcused first', JSON.stringify(per) === JSON.stringify(['Matematyka 1 nieuspr. 50,0%', 'Inne 1 uspr. 66,7%']), per);
 const marks = () => js(`[...document.querySelectorAll('.entries .chip')].map((c) => c.classList[2] + ':' + c.textContent)`);
-check('attendance: presence filtered, every kind has its own mark', JSON.stringify(await marks()) === JSON.stringify(['g0:u', 'g0:sp', 'g1:nb']), await marks());
+check('attendance: presence filtered, every kind has its own mark', JSON.stringify(await marks()) === JSON.stringify(['g5:u', 'blue:sp', 'g1:nb']), await marks());
 await js(`document.querySelector('.filter button[title="Nieusprawiedliwione"]').click()`);
 check('attendance: the list narrows to one kind', JSON.stringify(await marks()) === JSON.stringify(['g1:nb']) &&
   (await js(`document.querySelector('.filter [aria-pressed=true]').innerText`)) === 'Nieuspr.', await marks());
@@ -856,6 +856,22 @@ const planAuto = await js(`localStorage.getItem('plan-view')`);
 await js(`${choice('plan', planLabel)}.click()`);
 check('settings: the plan view is the one the plan kept, can be picked here, and can follow the screen again', planShown === 'true' && planDay === 'day' && planAuto === null &&
   (await js(`localStorage.getItem('plan-view')`)) === planWas, { planWas, planShown, planDay, planAuto });
+
+// The tints of the attendance marks: a late one is blue until another is picked, and the usual ones come back at a click.
+const swatch = (std, name) => `document.querySelector('main [aria-labelledby="tone-${std}"] button[aria-label="${name}"]')`;
+const tonesWere = await js(`[1, 3, 2, 4].map((std) => document.querySelector('main [aria-labelledby="tone-' + std + '"] [aria-pressed=true]')?.getAttribute('aria-label'))`);
+await js(`${swatch(2, 'czerwony')}.click()`);
+await go('#/frekwencja', `document.querySelectorAll('.entries .chip').length === 3`);
+const repainted = await marks();
+await shot('18-attendance-tones');
+await go('#/ustawienia', `${swatch(2, 'czerwony')}?.getAttribute('aria-pressed') === 'true'`);
+const tonePicked = await js(`localStorage.getItem('attendance-tone/2')`);
+await shot('18-settings-tones');
+await clickText('main button', 'Przywróć domyślne');
+const tonesBack = await until(`${swatch(2, 'niebieski')}?.getAttribute('aria-pressed') === 'true'`);
+check('settings: the marks of attendance start red, green, blue and yellow, take the tint picked, and go back', JSON.stringify(tonesWere) === JSON.stringify(['czerwony', 'zielony', 'niebieski', 'żółty']) &&
+  JSON.stringify(repainted) === JSON.stringify(['g5:u', 'g1:sp', 'g1:nb']) && tonePicked === 'g1' && tonesBack && (await js(`localStorage.getItem('attendance-tone/2')`)) === null &&
+  !(await js(hasButton('Przywróć domyślne'))), { tonesWere, repainted, tonePicked, tonesBack });
 
 await go('#/zadania', `!!document.querySelector('main [role=alert]')`);
 check('premium: a refused paid module is explained once Librus confirms there is no subscription', (await text('main [role=alert]'))[0]?.includes('Mobilnymi Dodatkami') &&

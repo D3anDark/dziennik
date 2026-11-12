@@ -167,7 +167,10 @@ liczonych przez aplikację dodaje plus (`plus-worth`: +0,5, +0,33, +0,25 albo ni
 -0,25, -0,33, -0,5 albo nic), z czego jest średnia roczna (`year-average`: wszystkie oceny roku albo średnia ze
 średnich obu semestrów), tryb do zrzutów ekranu i ponowne pokazanie samouczka (kasuje `tour-seen` i ładuje
 Start), motyw (`theme`: systemowy, jasny albo ciemny) i widok planu (`plan-view`: automatycznie, dzień albo tydzień;
-ten sam klucz zapisuje przełącznik w planie). Wybrany motyw nie trzyma drugiej kopii kolorów: `applyTheme` w
+ten sam klucz zapisuje przełącznik w planie) oraz kolory znaczków frekwencji (`attendance-tone/<rodzaj>`):
+nieusprawiedliwione są czerwone, usprawiedliwione zielone, spóźnienia niebieskie, zwolnienia żółte, a każdy rodzaj
+można przestawić na jeden z siedmiu odcieni aplikacji (skala ocen i niebieski, z gotowym kontrastem w obu motywach)
+albo wrócić do domyślnych; rodzaje wpisów dodane przez szkołę zostają szare. Wybrany motyw nie trzyma drugiej kopii kolorów: `applyTheme` w
 `web/src/util.js` zmienia warunek bloku `prefers-color-scheme: dark` w arkuszu na "zawsze" albo "nigdy", a za nim idą
 `color-scheme` i kolor paska przeglądarki. Ustawienia ocen są jedne dla wszystkich uczniów konta. Niżej "Aplikacja" (instalacja, samouczek, zgłoszenie
 błędu) i "Konto": wylogowanie, które jest też w "Więcej" i w pasku bocznym, oraz "Usuń moje dane" (RODO art. 17),
