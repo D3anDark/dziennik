@@ -15,8 +15,14 @@ FEEDS = {"feeds": [{"login": "1001u", "checked": 1762675200, "error": ""}, {"log
 OTHER = {
     "Me": {"Me": {"Account": {"Login": "2002u", "GroupId": 5, "IsPremium": False, "IsPremiumDemo": False}}},
     "PointGrades": {"Grades": [{"Id": 1, "Subject": {"Id": "7"}, "Category": {"Id": 9}, "AddedBy": {"Id": 1}, "Grade": "5",
-                                "Date": "2026-10-20", "AddDate": "2026-10-20 10:00:00", "Semester": 1, "Comments": [{"Id": 4}]}]},
-    "PointGrades/Categories": {"Categories": [{"Id": 9, "Name": "Sprawdzian", "ValueFrom": 0, "ValueTo": 20, "Weight": 1}]},
+                                "Date": "2026-10-20", "AddDate": "2026-10-20 10:00:00", "Semester": 1, "Comments": [{"Id": 4}]},
+                               # A subject graded in points alone: 15 of 20 and 9 of 10, the number given either way.
+                               {"Id": 2, "Subject": {"Id": 12}, "Category": {"Id": 9}, "AddedBy": {"Id": 1}, "Grade": "15", "GradeValue": 15,
+                                "Date": "2026-10-15", "AddDate": "2026-10-15 10:00:00", "Semester": 1},
+                               {"Id": 3, "Subject": {"Id": 12}, "Category": {"Id": 10}, "AddedBy": {"Id": 1}, "Grade": "9",
+                                "Date": "2026-10-16", "AddDate": "2026-10-16 10:00:00", "Semester": 1}]},
+    "PointGrades/Categories": {"Categories": [{"Id": 9, "Name": "Sprawdzian", "ValueFrom": 0, "ValueTo": 20, "Weight": 1},
+                                              {"Id": 10, "Name": "Kartkówka", "ValueFrom": 0, "ValueTo": 10, "Weight": 1}]},
     "PointGrades/Comments": {"Comments": [{"Id": 4, "Text": "Brawo"}]},
     "PointGrades/Averages": {"Averages": [{"Subject": {"Id": 7}, "Semester1": "71.50", "Semester2": "0.00", "FullYear": "0.00"}]},
     "TextGrades": {"Grades": [{"Id": 1, "Subject": {"Id": 5}, "AddedBy": {"Id": 2}, "Grade": "zaliczono",
@@ -76,7 +82,8 @@ S = {
          "Improvement": {"Id": 7, "Url": "https://api.librus.pl/2.0/Grades/7"}},
         {"Id": 9, "Grade": "4", "Date": "2026-10-14", "Semester": 1, "Subject": {"Id": "404"}, "Category": {"Id": 2},
          "Improvement": {"Id": 5, "Url": "https://api.librus.pl/2.0/Grades/5"}}]},
-    "Subjects": {"Subjects": [{"Id": 5, "Name": "Matematyka"}, {"Id": "7", "Name": "Język polski"}, {"Id": 11, "Name": "Statystyka"}]},
+    "Subjects": {"Subjects": [{"Id": 5, "Name": "Matematyka"}, {"Id": "7", "Name": "Język polski"}, {"Id": 11, "Name": "Statystyka"},
+                              {"Id": 12, "Name": "Chemia"}]},
     "Me": {"Me": {"Account": {"Login": "1001u", "GroupId": 8, "IsPremium": True}}},
     "Grades/Categories": {"Categories": [
         {"Id": 1, "Name": "Sprawdzian", "Weight": 3, "CountToTheAverage": True},

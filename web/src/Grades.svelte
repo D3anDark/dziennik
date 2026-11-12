@@ -30,7 +30,7 @@
     for (const g of list) {
       // Only the 1 to 6 scale has a tone (data.js); points, words and marks like "np" have no place in this mean.
       // Forced, a grade of any other system that reads as 1 to 6 counts too, and one without a weight counts once.
-      // Points never do: a 5 there is five points.
+      // Points never do: a 5 there is five points, and `share` is what counts them.
       if (forced ? worth(g.value) === null || g.id.startsWith('PointGrades/') : g.tone === 'g0' || g.weight === null) continue;
       const [v, w] = [worth(g.value, plus, minus), Number(g.weight ?? 1) || 0];
       sum += v * w;
@@ -43,14 +43,27 @@
   }
 
   /**
+   * The share of the points to be had that the point grades of a list got, in percent, or 0 without any: the sum of
+   * the points over the sum of their categories' maxima, weights left out.
+   */
+  function share(list) {
+    let [got, max] = [0, 0];
+    for (const g of list) if (g.points) [got, max] = [got + g.points[0], max + g.points[1]];
+    return max ? (got / max) * 100 : 0;
+  }
+
+  /**
    * What the app counts for a subject, by semester and for the year, with the grades tried out in the simulator
-   * (`tries`) beside its own. An improved grade counts with its improvement.
+   * (`tries`) beside its own. An improved grade counts with its improvement. A subject graded in points alone
+   * (`points`) gets the share of them it has, in percent; with grades of both kinds, the 1 to 6 scale's mean.
    */
   function counts(s, tries = []) {
     const [one, two] = [1, 2].map((n) => [...s.rows[n].flatMap((g) => [...(g.was ?? []), g]), ...tries.filter((g) => g.semester === n)]);
-    const [first, second] = [mean(one), mean(two)];
+    const by = mean([...one, ...two]) ? mean : share;
+    const [first, second] = [by(one), by(two)];
     // The year: every grade of it, or the mean of its two semesters' averages where a school counts it so.
-    return { Semester1: first, Semester2: second, FullYear: halves && first && second ? (first + second) / 2 : mean([...one, ...two]) };
+    const year = halves && first && second ? (first + second) / 2 : by([...one, ...two]);
+    return { Semester1: first, Semester2: second, FullYear: year, points: by === share && year > 0 };
   }
 
   /**
@@ -88,7 +101,7 @@
     const averages = shown.flatMap((s) => {
       const of = (k) => s.avg.find(([t, name]) => t === sem && name === k)?.[3];
       const n = sem === 1 ? of('I sem.') : (of('rok') ?? of('II sem.'));
-      return n >= 1 && n <= 6 ? [n] : [];
+      return n > 0 && !s.points ? [n] : [];
     });
     const finals = (kind) => shown.flatMap((s) => s.final[sem].filter((g) => g.kind === kind).map((g) => worth(g.value, 0, 0)).filter(Boolean));
     const [final, proposed, word] = sem === 1 ? ['Ocena semestralna', 'Proponowana semestralna', 'semestralnych'] : ['Ocena roczna', 'Proponowana roczna', 'rocznych'];
@@ -122,17 +135,23 @@
       else group.rows[g.semester].push(g);
     }
     // A school that hides its averages sends none: then they are counted here (`own`), from the grades and weights.
-    const hidden = ![...averages.values()].some((av) => [av.Semester1, av.Semester2, av.FullYear].some((v) => Number(v) > 0));
+    // By scale, [the 1 to 6 grades', the points']: an average sent for a subject graded in points says nothing about
+    // the others, and the other way round.
+    const hidden = [false, true].map((points) => ![...averages.values()].some((av) => Boolean(av.points) === points && [av.Semester1, av.Semester2, av.FullYear].some((v) => Number(v) > 0)));
     for (const s of groups.values()) {
       const counted = counts(s);
       // Forced, a subject with nothing to count (points alone) keeps what Librus sends.
-      s.own = (hidden || forced) && counted.FullYear > 0;
+      s.own = (forced || hidden[+counted.points]) && counted.FullYear > 0;
       const av = s.own ? counted : averages.get(s.key);
+      // On the scale of points: no part of a mean of 1 to 6 averages, and nothing the simulator's grades fit.
+      s.points = Boolean(av?.points);
+      // What the app counts in points is a percentage and says so; what Librus sends stays as sent.
+      const said = (v) => (avg(v) && s.own && s.points ? `${avg(v)}%` : avg(v));
       // by semester; the year's average with the second's
       s.avg = [
-        [1, 'I sem.', avg(av?.Semester1), Number(av?.Semester1)],
-        [2, 'II sem.', avg(av?.Semester2), Number(av?.Semester2)],
-        [2, 'rok', avg(av?.FullYear), Number(av?.FullYear)],
+        [1, 'I sem.', said(av?.Semester1), Number(av?.Semester1)],
+        [2, 'II sem.', said(av?.Semester2), Number(av?.Semester2)],
+        [2, 'rok', said(av?.FullYear), Number(av?.FullYear)],
       ].filter(([, , v]) => v);
     }
     // Named subjects first; "Inne" (subjects Librus does not list) and the descriptive grades of the whole year after them.
@@ -172,10 +191,11 @@
       <p class="muted fresh-key"><span class="dot new"></span>nowa ocena: kropka znika po jej otwarciu</p>
     {/if}
     {#if shown.some((s) => s.own && s.avg.some(([t]) => t === sem))}
+      {@const percent = shown.some((s) => s.own && s.points) ? ' Przy ocenach punktowych to procent zdobytych punktów.' : ''}
       {#if forced}
-        <p class="byline">Średnie wylicza aplikacja z&nbsp;każdej oceny 1–6 poza punktowymi (plus +{comma(plus)}, minus −{comma(minus)}, ocena bez wagi raz{halves ? ', rok jako średnia z\u00a0obu semestrów' : ''}), jak wybrano w&nbsp;<a href="#/ustawienia">Ustawieniach</a>. Szkoła może liczyć inaczej.</p>
+        <p class="byline">Średnie wylicza aplikacja z&nbsp;każdej oceny 1–6 (plus +{comma(plus)}, minus −{comma(minus)}, ocena bez wagi raz{halves ? ', rok jako średnia z\u00a0obu semestrów' : ''}), jak wybrano w&nbsp;<a href="#/ustawienia">Ustawieniach</a>.{percent} Szkoła może liczyć inaczej.</p>
       {:else}
-        <p class="byline">Średnie wylicza aplikacja z&nbsp;ocen i&nbsp;wag, bo Librus ich nie podaje (plus +{comma(plus)}, minus −{comma(minus)}{halves ? ', rok jako średnia z\u00a0obu semestrów' : ''}). Szkoła może liczyć inaczej.</p>
+        <p class="byline">Średnie wylicza aplikacja z&nbsp;ocen i&nbsp;wag, bo Librus ich nie podaje (plus +{comma(plus)}, minus −{comma(minus)}{halves ? ', rok jako średnia z\u00a0obu semestrów' : ''}).{percent} Szkoła może liczyć inaczej.</p>
       {/if}
     {/if}
     {#if all}<p class="overall">{all}</p>{/if}
@@ -219,7 +239,7 @@
                   {/each}
                 {/if}
               {/each}
-              {#if simulating && s.key !== 'whole'}
+              {#if simulating && s.key !== 'whole' && !s.points}
                 <div class="row">
                   <span class="muted label">Na próbę</span>
                   <ul class="chips">

@@ -112,7 +112,8 @@ async function loadGrades(login) {
       ]);
       const [dict, comments] = [byId(d.Categories ?? d.Skills), byId(c.Comments)];
       // One average a subject: with grades in both systems, the 1 to 6 scale's, however the answers race.
-      for (const av of a.Averages ?? []) if (s.path === 'Grades' || !averages.has(String(av.Subject?.Id))) averages.set(String(av.Subject?.Id), av);
+      // `points`: an average on the scale of points, not on that of the grades.
+      for (const av of a.Averages ?? []) if (s.path === 'Grades' || !averages.has(String(av.Subject?.Id))) averages.set(String(av.Subject?.Id), s.path === 'PointGrades' ? { ...av, points: true } : av);
       for (const gr of lists[i]) {
         const ref = gr[s.ref];
         const category = dict.get(String(ref?.Id ?? ref));
@@ -123,6 +124,7 @@ async function loadGrades(login) {
         // Points carry their maximum, so a 5 of 20 is not read as a 5 on the 1 to 6 scale beside it.
         const max = s.path === 'PointGrades' && full && category?.ValueTo != null ? `/${category.ValueTo}` : '';
         const value = cut ? full.slice(0, 2).toUpperCase() : full + max;
+        const got = Number(String(gr.GradeValue ?? gr.Grade).replace(',', '.'));
         items.push({
           id: `${s.path}/${gr.Id}`,
           subject: s.whole ? 'whole' : String(gr.Subject?.Id),
@@ -135,6 +137,9 @@ async function loadGrades(login) {
           added: gr.AddDate ?? '',
           semester: s.whole ? 0 : Number(gr.Semester) === 2 ? 2 : 1,
           category: [category?.Name, category?.ValueTo != null && `${category.ValueFrom ?? 0}–${category.ValueTo} pkt`].filter(Boolean).join(', '),
+          // What a point grade got out of what could be had, for the share the app counts; null off that system, for a
+          // mark that is no number ("nb") and for a category without a maximum.
+          points: s.path === 'PointGrades' && Number.isFinite(got) && category?.ValueTo > 0 ? [got, Number(category.ValueTo)] : null,
           // null: the category does not count to the average; one that counts without a weight counts once
           weight: category?.CountToTheAverage ? (category.Weight ?? 1) : null,
           teacher: gr.AddedBy?.Id ? person(users.get(String(gr.AddedBy.Id))) : '',

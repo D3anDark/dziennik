@@ -118,8 +118,9 @@
   </label>
   <p class="muted">
     Dla szkoły, która wymaga średniej, a&nbsp;oceny wpisuje jako opisowe albo w&nbsp;kategoriach nieliczonych do średniej,
-    więc Librus żadnej nie podaje. Aplikacja liczy wtedy sama: każda ocena 1–6 poza punktowymi, z&nbsp;wagą swojej kategorii
-    albo raz, a&nbsp;gdy wszystkie wagi przedmiotu to 0, każda raz.
+    więc Librus żadnej nie podaje. Aplikacja liczy wtedy sama: każda ocena 1–6 z&nbsp;wagą swojej kategorii
+    albo raz, a&nbsp;gdy wszystkie wagi przedmiotu to 0, każda raz. Przedmiot oceniany punktami dostaje procent zdobytych
+    punktów.
   </p>
   <h3 class="section" id="plus">Plus przy ocenie</h3>
   <div class="segmented filter" role="group" aria-labelledby="plus">

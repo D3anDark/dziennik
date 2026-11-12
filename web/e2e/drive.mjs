@@ -777,6 +777,17 @@ await shot('18-grades-systems');
 const setting = (label) => `[...document.querySelectorAll('main label.check')].find((l) => l.textContent.trim() === ${JSON.stringify(label)})?.querySelector('input')`;
 const forcedBox = setting('Licz średnie z każdej oceny 1–6');
 const asSent = await heads();
+// A school hides the averages of its 1 to 6 grades while Librus still sends one for a subject graded in points: that
+// one says nothing about the rest, which the app counts. Points keep what Librus sends, here nothing for Chemia.
+await fetch(`${base}/__noavg`);
+const hiddenBesidePoints = await reload(`(${counted}).startsWith('Średnie wylicza aplikacja')`);
+const besidePoints = await heads();
+const meanBesidePoints = (await text('main .overall')).map((t) => t.replace(/\u00a0/g, ' '));
+await fetch(`${base}/__avg`);
+const sentAgain = await reload(`!(${counted})`);
+check('grades: hidden averages are counted although Librus sends one for a subject graded in points', hiddenBesidePoints && sentAgain &&
+  JSON.stringify(besidePoints) === JSON.stringify({ Chemia0: '', 'Język polski1': 'śr. I sem. 3,00', Matematyka2: 'śr. I sem. 4,80', Statystyka3: '', Inne4: 'śr. I sem. 3,50', Inne5: 'śr. I sem. 2,80', 'Oceny opisowe6': '' }) &&
+  JSON.stringify(meanBesidePoints) === JSON.stringify(['Wszystkie przedmioty: średnia ze średnich 3,53 (z 4 przedmiotów).']), { besidePoints, meanBesidePoints });
 await go('#/ustawienia', `${forcedBox}?.checked === false`);
 await js(`${forcedBox}.click()`);
 // The grades open at the second semester, counted anew: the answer kept from before the switch is not shown.
@@ -785,11 +796,11 @@ const forcedSecond = await heads();
 await clickText('main .segmented button', 'I semestr');
 await until(`document.querySelector('main .segmented [aria-pressed=true]')?.textContent === 'I semestr'`);
 const forcedFirst = await heads();
-// I: the 3 alone, the 5 of 20 points left out; (5 x 3 + 4,5 x 2) / 5; a 5 and a 4 at no weight, once each. II: the
+// I: points alone, 24 of 30; the 3 alone, the 5 of 20 points left out; (5 x 3 + 4,5 x 2) / 5; a 5 and a 4 at no weight, once each. II: the
 // descriptive 3, once; the year (15 + 9 + 3) / 6.
 check('grades: forced in the settings, the averages are counted from every 1 to 6 grade, a descriptive one once, points left out', forcedOn &&
-  JSON.stringify(asSent) === JSON.stringify({ 'Język polski0': 'śr. I sem. 71,50', Matematyka1: 'śr. I sem. 4,67', Statystyka2: '', Inne3: '', Inne4: '', 'Oceny opisowe5': '' }) &&
-  JSON.stringify(forcedFirst) === JSON.stringify({ 'Język polski0': 'śr. I sem. 3,00', Matematyka1: 'śr. I sem. 4,80', Statystyka2: 'śr. I sem. 4,50', Inne3: 'śr. I sem. 3,50', Inne4: 'śr. I sem. 2,80', 'Oceny opisowe5': '' }) &&
+  JSON.stringify(asSent) === JSON.stringify({ Chemia0: '', 'Język polski1': 'śr. I sem. 71,50', Matematyka2: 'śr. I sem. 4,67', Statystyka3: '', Inne4: '', Inne5: '', 'Oceny opisowe6': '' }) &&
+  JSON.stringify(forcedFirst) === JSON.stringify({ Chemia0: 'śr. I sem. 80,00%', 'Język polski1': 'śr. I sem. 3,00', Matematyka2: 'śr. I sem. 4,80', Statystyka3: 'śr. I sem. 4,50', Inne4: 'śr. I sem. 3,50', Inne5: 'śr. I sem. 2,80', 'Oceny opisowe6': '' }) &&
   JSON.stringify(forcedSecond) === JSON.stringify({ Matematyka0: 'śr. II sem. 3,00, rok 4,50', 'Oceny opisowe1': '' }) &&
   (await js(`localStorage.getItem('forced-averages')`)) === '1', { forcedOn, asSent, forcedFirst, forcedSecond });
 // A plus worth a quarter, picked in the settings: (5 x 3 + 4,25 x 2) / 5, and the note says what counts.
@@ -803,8 +814,8 @@ const quarterHeads = await heads();
 const quarterKept = await js(`localStorage.getItem('plus-worth')`);
 await go('#/ustawienia', `${choice('plus', '+0,25')}?.getAttribute('aria-pressed') === 'true'`);
 await js(`${choice('plus', '+0,5')}.click()`);
-check('settings: a plus counts as picked in the averages the app makes, and the default keeps nothing', quarter && quarterHeads.Matematyka1 === 'śr. I sem. 4,70' &&
-  quarterHeads['Język polski0'] === 'śr. I sem. 3,00' && quarterKept === '0.25' && (await js(`localStorage.getItem('plus-worth')`)) === null &&
+check('settings: a plus counts as picked in the averages the app makes, and the default keeps nothing', quarter && quarterHeads.Matematyka2 === 'śr. I sem. 4,70' &&
+  quarterHeads['Język polski1'] === 'śr. I sem. 3,00' && quarterHeads.Chemia0 === 'śr. I sem. 80,00%' && quarterKept === '0.25' && (await js(`localStorage.getItem('plus-worth')`)) === null &&
   (await go('#/oceny', `(${counted}).includes('plus +0,5, minus −0,25')`)), { quarter, quarterHeads, quarterKept });
 // The year as the mean of its semesters' averages, picked in the settings: (4,80 + 3,00) / 2, not (15 + 9 + 3) / 6.
 await go('#/ustawienia', `${choice('year', 'Wszystkie oceny roku')}?.getAttribute('aria-pressed') === 'true'`);
