@@ -136,6 +136,12 @@ await js(`location.hash = '#/oceny'`);
 check('third child: descriptive 1 to 6 grades count once the settings say so', !third[5].includes('śr.') && (await until(`${loaded} && ${row('Informatyka')}.includes('śr.')`)), [third[5], await js(row('Informatyka'))]);
 await js(`location.hash = '#/frekwencja'`);
 check("third child: the school's own kind of attendance", await until(`${loaded} && document.querySelector('main').innerText.includes('Zwolnienie na zawody')`));
+await js(`location.hash = '#/zachowanie'`);
+await until(`${loaded} && document.querySelectorAll('main .entries li').length > 0`);
+const points = await js(`[document.querySelector('main section:last-of-type h2')?.textContent, ...[...document.querySelectorAll('main .entries li')].map((li) => li.textContent.replace(/\\s+/g, ' ').trim())]`);
+const chips = await js(`[...document.querySelectorAll('main .entries .chip')].map((c) => Number(c.textContent))`);
+check('third child: behaviour points count from the start points of the semester', /^Punkty: -?\d+$/.test(points[0]) && points.at(-1).startsWith('100 Punkty startowe') &&
+  Number(points[0].slice(8)) === chips.reduce((a, b) => a + b, 0), points);
 
 // The link preview (vite.config.js) is read from the page as it is served, with no script run: there, one Container
 // within Discord's 3000 bytes, and every picture it names a file of the site.

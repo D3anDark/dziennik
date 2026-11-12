@@ -28,20 +28,35 @@
         value: type?.Name ?? type?.Shortcut ?? '?',
       };
     });
-    const points = (p.Grades ?? [])
-      .map((x) => ({
-        id: x.Id,
-        // An entry is a number of points or, at schools that grade with symbols, only a ShortName.
-        value: x.Value == null || x.Value === '' ? null : Number(x.Value),
-        shown: x.ShortName || x.Value,
-        category: [cats.get(String(x.Category?.Id))?.Name, range(cats.get(String(x.Category?.Id)))].filter(Boolean).join(', '),
-        text: comments.get(String(x.Id)) ?? '',
-        date: x.Date ?? x.AddDate ?? '',
-        who: x.AddedBy?.Id ? person(users.get(String(x.AddedBy.Id))) : '',
-      }))
-      .sort((a, b) => b.date.localeCompare(a.date));
-    // A total of some entries only would pass for the real one, so it is shown when every entry has points.
-    const sum = points.some((x) => x.value === null) ? null : points.reduce((s, x) => s + x.value, 0);
+    const points = (p.Grades ?? []).map((x) => ({
+      id: x.Id,
+      // An entry is a number of points or, at schools that grade with symbols, only a ShortName (or a behaviour grade).
+      value: x.Value == null || x.Value === '' ? null : Number(x.Value),
+      shown: x.ShortName || x.Value || types.get(String(x.BehaviourGrade?.Id))?.Name,
+      category: [cats.get(String(x.Category?.Id))?.Name, range(cats.get(String(x.Category?.Id)))].filter(Boolean).join(', '),
+      text: comments.get(String(x.Id)) ?? '',
+      date: x.Date ?? x.AddDate ?? '',
+      who: x.AddedBy?.Id ? person(users.get(String(x.AddedBy.Id))) : '',
+      sem: Number(x.Semester) === 2 ? 2 : 1,
+    }));
+    const sems = [...new Set(points.map((x) => x.sem))].sort();
+    // The points a semester starts with, as the school set them for the class's unit (Units); the second's as the
+    // first's unless set. Each is an entry of its semester.
+    const unit = points.length ? (await lookup(login, 'Classes')).Class?.Unit?.Id : null;
+    if (unit != null) {
+      const set = ((await lookup(login, 'Units')).Units ?? []).find((x) => String(x.Id) === String(unit))?.BehaviourGradesSettings?.StartPoints;
+      const start = [Number(set?.Semester1) || 0];
+      start.push(set?.Semester2 == null ? start[0] : Number(set.Semester2) || 0);
+      for (const sem of sems)
+        if (start[sem - 1]) points.push({ id: `start-${sem}`, value: start[sem - 1], shown: String(start[sem - 1]), category: 'Punkty startowe', text: `${sem === 1 ? 'I' : 'II'} semestr`, date: '', who: '', sem });
+    }
+    // The later semester first, its newest entry at the top and its start points at the bottom.
+    points.sort((a, b) => b.sem - a.sem || b.date.localeCompare(a.date));
+    // A total of some entries only would pass for the real one, so it is shown when every entry has points. By
+    // semester: each starts again.
+    const sum = points.some((x) => x.value === null)
+      ? null
+      : sems.map((sem) => [sem, points.filter((x) => x.sem === sem).reduce((s, x) => s + x.value, 0)]);
     return grades.length || points.length ? { grades, points, sum } : [];
   }
 
@@ -62,7 +77,7 @@
     {/if}
     {#if d.points.length}
       <section class="card">
-        <h2>{d.sum === null ? 'Punkty i wpisy' : `Punkty: ${d.sum}`}</h2>
+        <h2>{d.sum === null ? 'Punkty i wpisy' : `Punkty: ${d.sum.length > 1 ? d.sum.map(([sem, n]) => `${sem === 1 ? 'I' : 'II'} sem. ${n}`).join(', ') : d.sum[0][1]}`}</h2>
         <ul class="entries">
           {#each d.points as x (x.id)}
             <li>

@@ -50,8 +50,8 @@ const PARENT = 100;
 /**
  * The three children of one parent. `teachers` maps subject to teacher, `week` lists subjects by lesson, Monday first.
  * The third goes to another school, for what the first two never meet: subjects graded in points, in percent, in
- * letters with a phrase and in words (`systems`), 1 to 6 grades kept as descriptive ones, averages Librus does not send (`hidden`)
- * and a kind of attendance of the school's own.
+ * letters with a phrase and in words (`systems`), 1 to 6 grades kept as descriptive ones, averages Librus does not
+ * send (`hidden`), a kind of attendance of the school's own and behaviour points that start from some (`start`).
  */
 const STUDENTS = {
   demo1: {
@@ -70,6 +70,7 @@ const STUDENTS = {
     week: [[2, 1, 3, 15, 13], [1, 2, 5, 10, 11, 14], [3, 2, 1, 12, 13], [15, 1, 2, 16, 5], [2, 3, 1, 10, 13]],
     systems: { 2: 'points', 3: 'points', 15: 'percent', 10: 'described', 11: 'letters', 12: 'letters', 16: 'letters', 13: 'words' },
     hidden: true,
+    start: 100,
     school: 'Szkoła Podstawowa nr 12 im. Marii Skłodowskiej-Curie',
   },
 };
@@ -460,7 +461,8 @@ function synergia(d, method, rest, query, body) {
       { Id: 3, Name: 'Spóźnienie', ValueFrom: -2, ValueTo: -2 }, { Id: 4, Name: 'Praca na rzecz klasy', ValueFrom: 5, ValueTo: 10 },
     ]),
     'BehaviourGrades/Points/Comments': list('Comments', d.points.filter((p) => p.text).map((p) => ({ Id: p.Id, Grade: { Id: p.Id }, Text: p.text }))),
-    Classes: { Class: { Id: 1, Number: s.cls[0], Symbol: s.cls[1], ClassTutors: [{ Id: s.tutor }] } },
+    Classes: { Class: { Id: 1, Number: s.cls[0], Symbol: s.cls[1], ClassTutors: [{ Id: s.tutor }], Unit: { Id: 1 } } },
+    Units: list('Units', [{ Id: 1, BehaviourGradesSettings: { StartPoints: { Semester1: s.start ?? 0 } } }]),
     Schools: { School: { Id: 1, Name: s.school ?? 'Szkoła Podstawowa nr 7 im. Jana Brzechwy', Street: 'Lipowa', BuildingNumber: '12', Town: 'Kraków' } },
   };
   if (rest in fixed) return fixed[rest];

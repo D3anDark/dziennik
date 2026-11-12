@@ -330,7 +330,11 @@ def dynamic(rest, q):
         return {"Realizations": [{"Id": 100, "Date": ahead(-1), "LessonNo": "2", "Topic": "Lektura", "Lesson": {"Id": "2"}}] + [
             {"Id": i, "Date": ahead(-i), "LessonNo": "1", "Topic": f"Ułamki {i}", "Lesson": {"Id": 1}} for i in range(1, 13)]}
     if rest == "Classes":
-        return {"Class": {"Id": 3, "Number": 2, "Symbol": "a", "ClassTutors": [{"Id": 1}]}}
+        return {"Class": {"Id": 3, "Number": 2, "Symbol": "a", "ClassTutors": [{"Id": 1}], "Unit": {"Id": 4}}}
+    if rest == "Units":
+        # The class's unit starts every semester with 100 behaviour points; another unit of the school with none.
+        return {"Units": [{"Id": 2, "BehaviourGradesSettings": {"StartPoints": {"Semester1": 0}}},
+                          {"Id": 4, "BehaviourGradesSettings": {"StartPoints": {"Semester1": 100}}}]}
     if rest == "Schools":
         return {"School": {"Id": 1, "Name": "SP nr 1", "Street": "Szkolna", "BuildingNumber": "5", "Town": "Kraków"}}
     if rest == "Messages/ReceiversGroup":

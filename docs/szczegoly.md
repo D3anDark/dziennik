@@ -36,7 +36,8 @@ punktowe, tekstowe i opisowe: `Grades`, `PointGrades`, `TextGrades`, `Descriptiv
 plan lekcji na dzień albo tydzień (z opisem zastępstw i przeniesień, przerwami i sprawdzianami z terminarza), frekwencja z procentem i osobnym oznaczeniem nieobecności
 nieusprawiedliwionych, usprawiedliwionych, spóźnień i zwolnień (liczniki, przedmioty, filtr wpisów), terminarz,
 zadania domowe (najpierw do zrobienia, najbliższy termin na górze; z oznaczeniem "po terminie"), tematy lekcji,
-wiadomości, ogłoszenia, uwagi, zachowanie, klasa i nauczyciele (klasa, wychowawca, szkoła).
+wiadomości, ogłoszenia, uwagi, zachowanie (oceny, punkty z sumą za każdy semestr od punktów startowych jednostki
+szkoły z `Units`), klasa i nauczyciele (klasa, wychowawca, szkoła).
 
 Zapisy: wysyłanie wiadomości i odpowiedzi (odbiorcy z grup Librusa, bez rodziców), oznaczanie zadań domowych jako
 przeczytane (przy otwarciu) i wykonane. Wiadomość oznacza się jako przeczytaną przez jej pobranie;

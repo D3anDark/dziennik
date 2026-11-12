@@ -2055,10 +2055,10 @@ button.chip {
   align-items: center;
 }
 
-/* "u", "nb", "sp" in one width, so the names beside them start in one column. */
+/* "u", "nb", "sp" and behaviour points up to "100" in one width, so the names beside them start in one column. */
 .totals .kind .chip,
 .entries .chip.static {
-  min-width: 2.5em;
+  min-width: 3em;
 }
 
 /* The one figure the attendance screen is for, above the counts behind it. */

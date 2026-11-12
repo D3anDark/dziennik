@@ -956,10 +956,10 @@ check('webmail reply: the reply form goes out as the site built it', JSON.string
   ['idWiadomosciOrg', '301'], ['idOdpowiadajacego', '0'], ['typ', 'odp'], ['fileStorageIdentifier', ''],
   ['temat', 'Re: Zebranie'], ['tresc', 'Będę.'], ['wyslij', 'Wyślij']]), webReply);
 check('webmail reply: opens the sent reply', (await text('.toast'))[0] === 'Wiadomość wysłana.' && (await text('main h1'))[0] === 'Re: Zebranie');
-await go('#/zachowanie', `document.querySelectorAll('main .entries li').length === 2`);
+await go('#/zachowanie', `document.querySelectorAll('main .entries li').length === 3`);
 const behaviour = [(await text('main section:last-of-type h2'))[0], ...(await rows('main .entries li'))];
-check('behaviour: symbol entries, category range and comment, no total that would be partial', JSON.stringify(behaviour) === JSON.stringify([
-  'Punkty i wpisy', '5 Konkurs, 5 pkt12 paź · Anna Nowak', 'WC Wagary, od -10 do -5 pkt5 paź · Anna Nowak · Dwie godziny']), behaviour);
+check('behaviour: symbol entries, category range and comment, the unit\'s start points last, no total that would be partial', JSON.stringify(behaviour) === JSON.stringify([
+  'Punkty i wpisy', '5 Konkurs, 5 pkt12 paź · Anna Nowak', 'WC Wagary, od -10 do -5 pkt5 paź · Anna Nowak · Dwie godziny', '100 Punkty startoweI semestr']), behaviour);
 
 await go('#/uwagi', `!!document.querySelector('main [role=alert]')`);
 check('errors: any other refusal quotes Librus', (await text('main [role=alert]'))[0] === 'Szkoła nie udostępnia tego modułu. Librus: „Brak dostępu.”', await text('main [role=alert]'));
