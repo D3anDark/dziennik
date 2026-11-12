@@ -83,7 +83,7 @@ const MESSAGES = {
 export function message(e) {
   const text = MESSAGES[e?.message] ?? `Błąd: ${e?.message ?? e}`;
   // Librus says why it refused. Without its words every school-specific refusal reads the same.
-  return e?.cause && /^http_/.test(e.message) ? `${text} Librus: „${e.cause}”` : text;
+  return e?.cause && /^(http_|bad_credentials$)/.test(e.message) ? `${text} Librus: „${e.cause}”` : text;
 }
 
 /** The demo build (vite --mode demo) has no server: demo.js answers in the page with made-up data. */
@@ -102,8 +102,9 @@ export async function api(path, init) {
     clearApiCache();
     session.me = null;
   }
-  // Librus explains a refused write in MessagePL; views that write show it instead of the generic text.
-  const cause = typeof body?.MessagePL === 'string' ? body.MessagePL : undefined;
+  // Librus explains a refused write in MessagePL, and a refused sign-in on its login page (`detail`, from the server);
+  // views that write show it instead of the generic text.
+  const cause = [body?.MessagePL, body?.detail].find((x) => typeof x === 'string' && x);
   if (!res.ok) throw new Error(body?.error ?? `http_${res.status}`, { cause });
   net.synced = Date.now();
   try {

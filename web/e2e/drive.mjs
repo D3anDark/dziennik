@@ -95,7 +95,7 @@ check('privacy: the notice names who runs the server before anyone signs in', aw
 await fill('zle');
 await sleep(400);
 const alert = await text('[role=alert]');
-check('bad password message', alert[0] === 'Nieprawidłowy e-mail lub hasło.', alert);
+check('bad password message, with what Librus said', alert[0] === 'Nieprawidłowy e-mail lub hasło. Librus: „To dane SYNERGIA, nie Konta LIBRUS!”', alert);
 
 await fill('dobre');
 await until(`!!document.querySelector('header.bar select')`);
@@ -164,7 +164,7 @@ const firstH2 = (await text('main section h2'))[0];
 check('start: next lesson day', (await js(`[0,6].includes(new Date().getDay())`)) ? firstH2 !== 'Dziś' : firstH2 === 'Dziś', firstH2);
 check('start: lessons listed', start.includes('Matematyka') && /sala\s104/.test(start), start);
 const recent = await text('main .entries li .chip');
-check('start: recent grades newest first', recent[0] === '4+' && recent.length === 6, recent);
+check('start: recent grades newest first, an improved grade inside its improvement', recent[0] === '4+' && recent.length === 7 && recent[1].replace(/\s+/g, ' ') === '2 , poprawiona na 4', recent);
 const ev = await text('main .events li strong');
 check('start: 14-day events, far ones excluded',
   ev.includes('Sprawdzian: Matematyka') && ev.includes('Nieobecność nauczyciela: Piotr') && ev.includes('Wycieczka klasowa') && !ev.includes('Wywiadowka'), ev);
@@ -174,7 +174,7 @@ const gradeLoads = async () => (await log()).filter((l) => l === 'GET /api/s/100
 const loadsBefore = await gradeLoads();
 const blanked = await js(`new Promise((done) => { document.querySelector('header button[aria-label=Odśwież]').click(); setTimeout(() => done(document.querySelector('main').innerText.includes('Ładowanie')), 0); })`);
 await until(`!document.querySelector('header .busy')`);
-check('refresh: the button loads the screen again and keeps it visible meanwhile', !blanked && (await gradeLoads()) === loadsBefore + 1 && (await text('main .entries li .chip')).length === 6, { blanked });
+check('refresh: the button loads the screen again and keeps it visible meanwhile', !blanked && (await gradeLoads()) === loadsBefore + 1 && (await text('main .entries li .chip')).length === 7, { blanked });
 check('logout is not in the header any more', !(await js(`!!document.querySelector('header button[aria-label=Wyloguj]')`)));
 if (weekday) {
   // The lesson in progress, or the next one, is marked on today's card; the clock is pinned for the check.
@@ -214,6 +214,34 @@ check('grades: a grade added this week is new until opened, then its dot goes', 
   (await js(`document.querySelectorAll('.chip.fresh').length`)) === 0 && (await js(`localStorage.getItem('seen-grades/1001u')`)) === '["Grades/2"]' &&
   keyBefore === 'nowa ocena: kropka znika po jej otwarciu' && !(await js(`!!document.querySelector('.fresh-key')`)), { freshBefore, keyBefore });
 await shot('2-grades');
+
+// An improved grade and its improvement are one chip, as in Librus: the old grade struck out before the new one.
+const pairs = await js(`[...document.querySelectorAll('main .chip')].filter((c) => c.querySelector('.was')).map((c) => [c.getAttribute('aria-label'), c.querySelector('.was').textContent, c.closest('section').querySelectorAll('.chip').length])`);
+await clickText('.chip', '-, poprawiona na 3');
+await sleep(100);
+const improvedDetail = (await text('.detail'))[0] ?? '';
+check('grades: an improved grade is not a chip of its own, its improvement shows it struck out and names it in the detail',
+  JSON.stringify(pairs) === JSON.stringify([['Ocena 3, poprawa oceny -', '-', 2], ['Ocena 4, poprawa oceny 2', '2', 1]]) && improvedDetail.endsWith('Poprawiona ocena: - · 5 paź'), { pairs, improvedDetail });
+await shot('2-grades-improved');
+
+// A school that hides its averages: the app counts them from the grades and their weights, and says so.
+const heads = () => js(`Object.fromEntries([...document.querySelectorAll('main section .head')].map((h, i) => [h.querySelector('h2').textContent + i, h.querySelector(':scope > span')?.textContent ?? '']))`);
+const counted = `document.querySelector('main .byline')?.textContent ?? ''`;
+const reload = async (ready) => {
+  await js(`document.querySelector('header button[aria-label=Odśwież]').click()`);
+  return until(ready);
+};
+const noteBefore = await js(counted);
+await fetch(`${base}/__noavg`);
+// (5 x 3 + 4,5 x 2) / 5: the semestral 5 and its category stay out. An improved 2 counts beside its 4, a "-" does not.
+const own = await reload(`${counted}.startsWith('Średnie wylicza aplikacja')`);
+const ownHeads = await heads();
+check('grades: averages the school hides are counted from the grades and weights, with a note', !noteBefore && own &&
+  JSON.stringify(ownHeads) === JSON.stringify({ 'Język polski0': 'śr. I sem. 3,00', Matematyka1: 'śr. I sem. 4,80', Inne2: 'śr. I sem. 3,50', Inne3: 'śr. I sem. 2,80' }), { noteBefore, ownHeads });
+await shot('2-grades-counted');
+await fetch(`${base}/__avg`);
+const back = await reload(`!${counted}`);
+check('grades: with averages from Librus again, its own and no note', back && JSON.stringify(Object.values(await heads())) === JSON.stringify(['', 'śr. I sem. 4,67', '', '']), await heads());
 
 // A phone opens the plan at one day, in a strip of its week's school days.
 await go('#/plan', `document.querySelectorAll('.days button').length === 5 && !!document.querySelector('main section .lessons')`);
@@ -627,6 +655,8 @@ await setField('form.compose input', 'Nowy@Example.com');
 await submit();
 await until(`document.querySelectorAll('main .access li').length === 3`);
 const added = await rows('main .access li');
+check('access: why an address last failed to sign in, and the commit the server runs', /Nieudane logowanie 9 lis 2025, \d\d:00: Nieprawidłowy e-mail lub hasło\. Librus: „To dane SYNERGIA, nie Konta LIBRUS!”$/.test(added[0]) &&
+  !added[1].includes('Nieudane') && (await mainText()).includes('Serwer zbudowany z commita abc.'), added);
 check('access: address added, form cleared', added[0]?.startsWith('nowy@example.com niezalogowany') && (await js(`document.querySelector('form.compose input').value`)) === '' &&
   !(await js(`!!document.querySelector('main [role=alert]')`)) && (await log()).includes('POST /api/admin/emails {"email": "Nowy@Example.com"}'), added);
 await shot('16-access');

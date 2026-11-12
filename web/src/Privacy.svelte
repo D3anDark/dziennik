@@ -45,7 +45,9 @@
   <p>
     <strong>Jak długo:</strong> sesja wygasa najpóźniej 30 dni po ostatnim użyciu, a&nbsp;wtedy znika wszystko, co jej
     dotyczy. Wylogowanie z&nbsp;ostatniego urządzenia albo „Usuń moje dane” kasuje dane od razu. Historia zmian to
-    najwyżej 300 wpisów na ucznia. Adres na liście dostępu zostaje, dopóki administrator go nie usunie.
+    najwyżej 300 wpisów na ucznia. Adres na liście dostępu zostaje, dopóki administrator go nie usunie. Przy adresie z&nbsp;listy
+    administrator widzi, czy ktoś się z&nbsp;niego zalogował, a&nbsp;po nieudanej próbie jej czas i&nbsp;powód (np. złe hasło),
+    bez hasła; ta notatka jest tylko w&nbsp;pamięci serwera i&nbsp;znika po udanym logowaniu, usunięciu adresu albo restarcie.
   </p>
   <p>
     <strong>Twoje prawa:</strong> dostęp do danych, ich sprostowanie, usunięcie, ograniczenie przetwarzania, przeniesienie

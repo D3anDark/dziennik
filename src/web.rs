@@ -230,6 +230,7 @@ mod tests {
             admins: HashSet::new(),
             allowed: HashSet::new(),
             attempts: Default::default(),
+            failed: Default::default(),
             refresh_lock: Default::default(),
             api: base.clone(),
             synergia: base.clone(),

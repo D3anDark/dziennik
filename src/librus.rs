@@ -20,7 +20,8 @@ pub const TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug)]
 pub enum Error {
-    BadCredentials,
+    /// With what the login page said in its alert, as plain text (may be empty).
+    BadCredentials(String),
     Captcha,
     /// Portal answered 503/424 for a Synergia account: technical break.
     Maintenance,
@@ -77,6 +78,9 @@ static ATTR_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')"#).expect("static regex"));
 static FORM_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<form\b([^>]*)>(.*?)</form>").expect("static regex"));
 static INPUT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<input\b([^>]*)>").expect("static regex"));
+static ALERT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?is)<(?:span|div|p)\b[^>]*\brole\s*=\s*["']alert["'][^>]*>(.*?)</(?:span|div|p)>"#).expect("static regex"));
+static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<[^>]*>").expect("static regex"));
 
 fn attrs(tag: &str) -> Vec<(String, String)> {
     ATTR_RE
@@ -122,12 +126,20 @@ pub fn code_from_redirect(location: &str) -> Option<String> {
     u.query_pairs().find(|(k, _)| k == "code").map(|(_, v)| v.into_owned()).filter(|c| !c.is_empty())
 }
 
+/// What the login page says in its alert after a refused sign-in: plain text on one line, at most 300 characters.
+/// It is shown to the person and to the admin as text, never as markup.
+fn alert(html: &str) -> String {
+    let inner = ALERT_RE.captures(html).and_then(|c| c.get(1)).map_or("", |m| m.as_str());
+    let text = unescape(&TAG_RE.replace_all(inner, " "));
+    text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(300).collect()
+}
+
 pub fn classify_page(html: &str) -> Error {
     let lower = html.to_ascii_lowercase();
     if lower.contains("g-recaptcha") || lower.contains("grecaptcha") || lower.contains("recaptcha/api") {
         Error::Captcha
     } else if parse_login_form(html).is_some() {
-        Error::BadCredentials
+        Error::BadCredentials(alert(html))
     } else {
         Error::Flow(String::new())
     }
@@ -252,7 +264,13 @@ mod tests {
         let names: Vec<&str> = f.hidden.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(names, ["redirectTo", "redirectCrc", "_token"]);
         assert_eq!(f.hidden[0].1, "/konto-librus/redirect/dru");
-        assert!(matches!(classify_page(PAGE), Error::BadCredentials));
+        assert!(matches!(classify_page(PAGE), Error::BadCredentials(said) if said.is_empty()));
+        // The alert Librus adds to the form after a refused sign-in (seen live, 2026-11-12).
+        let refused = PAGE.replace(
+            "<form id=\"login\"",
+            "<span class=\"common_alert--danger\" role=\"alert\">\n <strong>Upewnij się, że to nie dane\n SYNERGIA &amp; szkoły!</strong>\n</span><form id=\"login\"",
+        );
+        assert!(matches!(classify_page(&refused), Error::BadCredentials(said) if said == "Upewnij się, że to nie dane SYNERGIA & szkoły!"));
         assert!(matches!(classify_page("<div class=\"g-recaptcha\"></div>"), Error::Captcha));
         assert!(matches!(classify_page("<h1>Regulamin</h1>"), Error::Flow(_)));
     }

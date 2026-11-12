@@ -3,7 +3,7 @@
  * so the app can be tried on a static host (GitHub Pages) without a server or a Librus account. Dates follow the
  * device clock and one day always gives the same data; what the visitor changes (read, done, sent) lasts until reload.
  */
-import { today, shift, parse } from './util.js';
+import { today, shift, parse, worth } from './util.js';
 
 const T = today();
 const NOW = Math.floor(Date.now() / 1000);
@@ -102,10 +102,6 @@ const mark = (rnd, skill) => {
   const n = Math.min(6, Math.max(1, Math.round(skill + (rnd() + rnd() - 1) * 1.6)));
   const r = rnd();
   return String(n) + (r < 0.15 && n < 6 ? '+' : r > 0.88 && n > 1 ? '-' : '');
-};
-const worth = (v) => {
-  const n = parseInt(v, 10);
-  return n ? n + (v.endsWith('+') ? 0.5 : v.endsWith('-') ? -0.25 : 0) : null;
 };
 function average(list) {
   const counted = list.map((g) => [worth(g.Grade), CATEGORIES[g.Category.Id - 1]]).filter(([v, c]) => v && c.CountToTheAverage);

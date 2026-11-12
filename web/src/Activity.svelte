@@ -20,7 +20,7 @@
         <li>
           <a href="#/{e.page}">
             {#if e.grade}
-              <span class="chip static {e.grade.tone}" class:final={e.grade.kind}><Mark value={e.grade.value} /></span>
+              <span class="chip static {e.grade.tone}" class:final={e.grade.kind}><Mark value={e.grade.value} was={e.grade.was} /></span>
             {:else}
               <!-- Something removed: the icon of its page struck through, so it does not read as something new there. -->
               <span class="tile"><Icon name={ICONS[e.page.split('/')[0]] ?? 'pulse'} off={e.gone} size={18} /></span>

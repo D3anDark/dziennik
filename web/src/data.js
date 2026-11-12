@@ -71,6 +71,7 @@ export function markGradeSeen(login, id) {
 
 /**
  * Grades of every system the school uses: { items, averages } with averages keyed like `item.subject`.
+ * A grade that improves another holds it in `was`; the improved one is not an item of its own.
  * Fails only when no system answered, with the first error that is not a plain refusal.
  */
 export function grades(login) {
@@ -134,17 +135,29 @@ async function loadGrades(login) {
           added: gr.AddDate ?? '',
           semester: s.whole ? 0 : Number(gr.Semester) === 2 ? 2 : 1,
           category: [category?.Name, category?.ValueTo != null && `${category.ValueFrom ?? 0}–${category.ValueTo} pkt`].filter(Boolean).join(', '),
-          weight: category?.CountToTheAverage ? category.Weight : null,
+          // null: the category does not count to the average; one that counts without a weight counts once
+          weight: category?.CountToTheAverage ? (category.Weight ?? 1) : null,
           teacher: gr.AddedBy?.Id ? person(users.get(String(gr.AddedBy.Id))) : '',
           comment: (gr.Comments ?? []).map((x) => plain(comments.get(String(x.Id))?.Text)).filter(Boolean).join(' '),
           kind,
+          // The other grade of an improvement: Librus puts `Improvement` on one of the two.
+          link: gr.Improvement?.Id != null ? `${s.path}/${gr.Improvement.Id}` : null,
         });
       }
     }),
   );
   // The systems answer in any order; by date, a row of chips reads the same on every load.
   items.sort((p, q) => String(p.date ?? '').localeCompare(String(q.date ?? '')) || p.added.localeCompare(q.added) || p.id.localeCompare(q.id));
-  return { items, averages };
+  // An improved grade and its improvement are one entry, as in Librus: the later of the two stays and holds what it
+  // improved in `was`, oldest first (a second improvement holds both). The later one, whichever carries the link.
+  const at = new Map(items.map((g, i) => [g.id, i]));
+  const pairs = items.flatMap((g, i) => (at.has(g.link) && at.get(g.link) !== i ? [[Math.min(i, at.get(g.link)), Math.max(i, at.get(g.link))]] : []));
+  const improved = new Set();
+  for (const [old, now] of pairs.sort((p, q) => p[1] - q[1])) {
+    items[now].was = [...(items[old].was ?? []), items[old]];
+    improved.add(old);
+  }
+  return { items: items.filter((_, i) => !improved.has(i)), averages };
 }
 
 /**
@@ -197,7 +210,8 @@ const NEWS = {
 export async function activity(login) {
   const [{ entries }, marks, me] = await Promise.all([
     api(`activity/${encodeURIComponent(login)}`),
-    grades(login).then((g) => new Map(g.items.map((x) => [x.id, x])), () => new Map()),
+    // An improved grade's own entry in the feed still finds it: it lives in its improvement's `was`.
+    grades(login).then((g) => new Map(g.items.flatMap((x) => [...(x.was ?? []), x]).map((x) => [x.id, x])), () => new Map()),
     lookup(login, 'Me'),
   ]);
   // Only an account with Mobilne Dodatki reads messages by their API id; the rest go through the website (webmail.js).

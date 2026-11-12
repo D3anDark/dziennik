@@ -107,7 +107,7 @@
             <ul class="entries recent">
               {#each r.list as g (g.id)}
                 <li>
-                  <span class="chip static {g.tone}" class:final={g.kind}><Mark value={g.value} /></span>
+                  <span class="chip static {g.tone}" class:final={g.kind}><Mark value={g.value} was={g.was} /></span>
                   <span>{g.name}{#if g.kind}<span class="muted">{' · '}{g.kind.replace(/^Ocena /, '').toLowerCase()}</span>{/if}</span>
                   <span class="muted">{fmtDate(addedAt(g))}</span>
                 </li>

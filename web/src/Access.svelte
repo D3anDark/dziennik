@@ -9,6 +9,12 @@
   let busy = $state(false);
   let error = $state('');
   const list = resource(() => api('admin/emails'));
+  /** The commit the server was built from: what to compare with GitHub when a deployment is in doubt. */
+  let commit = $state('');
+  api('about').then(
+    (b) => (commit = String(b?.commit ?? '').slice(0, 7)),
+    () => {},
+  );
 
   /** Every change answers with the list as it now is. */
   async function change(request) {
@@ -58,6 +64,8 @@
               <span class="grow">
                 {a.email}
                 <small class="muted">{a.active ? 'zalogowany' : 'niezalogowany'} · dodany {fmtUnix(a.added)}</small>
+                <!-- Why the last sign-in failed, as the person saw it; gone once one works. -->
+                {#if a.failed}<small class="error">Nieudane logowanie {fmtUnix(a.failed.at)}: {message({ message: a.failed.reason, cause: a.failed.said })}</small>{/if}
               </span>
               <button class="icon-btn" disabled={busy} onclick={() => remove(a.email)} aria-label="Odbierz dostęp: {a.email}" title="Odbierz dostęp">
                 <Icon name="close" />
@@ -75,6 +83,7 @@
         {/each}
       </ul>
       <p class="muted">Zmienne <code translate="no">ADMIN_EMAILS</code> i <code translate="no">ALLOWED_EMAILS</code>. Zmiana wymaga restartu serwera.</p>
+      {#if commit}<p class="muted">Serwer zbudowany z commita <code translate="no">{commit}</code>.</p>{/if}
     </section>
   {/snippet}
 </Async>

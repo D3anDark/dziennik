@@ -1906,6 +1906,8 @@ section.card.today > h2 {
 
 .chip.static {
   display: inline-grid;
+  /* An improved grade before its improvement, on one line. */
+  grid-auto-flow: column;
   place-items: center;
   min-width: 32px;
   min-height: 28px;
@@ -1925,10 +1927,19 @@ section.card.today > h2 {
 
 button.chip {
   position: relative;
+  /* An improved grade keeps its own margin before its improvement, as in a chip that is not a button. */
+  gap: 0;
 }
 
 .chip abbr {
   text-decoration: none;
+}
+
+/* The grade an improvement replaced, struck out before it in its chip. */
+.chip .was {
+  margin-right: 5px;
+  font-weight: 400;
+  opacity: 0.75;
 }
 
 /* Added in the last 7 days: a dot in the corner, and "nowa" in the button's name. */

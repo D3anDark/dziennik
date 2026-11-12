@@ -50,6 +50,9 @@ struct App {
     allowed: HashSet<String>,
     // Keys are allowed emails only, so the map is bounded by the env lists plus the access list cap.
     attempts: Mutex<HashMap<String, Vec<Instant>>>,
+    /// Why an address on the list last failed to sign in, for the admin's list: (reason, Librus' words, when).
+    /// In memory only; gone on a sign-in that works and when the address is taken off. Bounded by the access list.
+    failed: Mutex<HashMap<String, (&'static str, String, i64)>>,
     // ponytail: one lock serializes every token refresh; per-user locks if the group grows.
     refresh_lock: tokio::sync::Mutex<()>,
     /// Bases of the Synergia API and website; a test points them at a fixture server.
@@ -83,7 +86,7 @@ impl From<librus::Error> for ApiError {
     fn from(e: librus::Error) -> Self {
         use librus::Error::*;
         match e {
-            BadCredentials => ApiError(StatusCode::UNAUTHORIZED, "bad_credentials"),
+            BadCredentials(_) => ApiError(StatusCode::UNAUTHORIZED, "bad_credentials"),
             Captcha => ApiError(StatusCode::FORBIDDEN, "captcha"),
             Maintenance => ApiError(StatusCode::SERVICE_UNAVAILABLE, "maintenance"),
             Status(StatusCode::UNAUTHORIZED) => ApiError(StatusCode::UNAUTHORIZED, "relogin"),
@@ -172,9 +175,17 @@ impl App {
             .allowed()
             .map_err(db_err)?
             .into_iter()
-            .map(|(email, added, active)| json!({ "email": email, "added": added, "active": active }))
+            .map(|(email, added, active)| {
+                let failed = self.failures().get(&email).cloned();
+                let failed = failed.map(|(reason, said, at)| json!({ "reason": reason, "said": said, "at": at }));
+                json!({ "email": email, "added": added, "active": active, "failed": failed })
+            })
             .collect();
         Ok(Json(json!({ "fixed": fixed, "emails": emails })))
+    }
+
+    fn failures(&self) -> std::sync::MutexGuard<'_, HashMap<String, (&'static str, String, i64)>> {
+        self.failed.lock().unwrap_or_else(|p| p.into_inner())
     }
 
     /// Reserves an attempt slot atomically so parallel requests cannot exceed the limit.
@@ -244,32 +255,58 @@ struct LoginBody {
     password: String,
 }
 
-async fn login(State(app): Shared, Json(b): Json<LoginBody>) -> Result<Response, ApiError> {
+/// A refused sign-in of an address on the list is kept for the admin (`App::failed`) and answered with Librus' own
+/// words beside the reason, so "wrong password" is not all a person learns. The log gets the reason, not the address.
+async fn login(State(app): Shared, Json(b): Json<LoginBody>) -> Response {
     let typed = b.email.trim();
     let email = typed.to_lowercase();
     if !app.is_allowed(&email) {
-        return Err(ApiError(StatusCode::FORBIDDEN, "not_allowed"));
+        eprintln!("login: refused: not_allowed");
+        return ApiError(StatusCode::FORBIDDEN, "not_allowed").into_response();
     }
-    if b.password.is_empty() || b.password.len() > 512 {
+    let mut said = String::new();
+    match sign_in(&app, typed, &email, &b.password, &mut said).await {
+        Ok(res) => {
+            app.failures().remove(&email);
+            res
+        }
+        Err(ApiError(status, reason)) => {
+            eprintln!("login: refused: {reason}");
+            let mut failed = app.failures();
+            // Too many tries says nothing about why they failed: the reason before it stays.
+            if reason != "rate_limited" || !failed.contains_key(&email) {
+                failed.insert(email, (reason, said.clone(), breaks::unix_now()));
+            }
+            (status, Json(json!({ "error": reason, "detail": said }))).into_response()
+        }
+    }
+}
+
+async fn sign_in(app: &App, typed: &str, email: &str, password: &str, said: &mut String) -> Result<Response, ApiError> {
+    if password.is_empty() || password.len() > 512 {
         return Err(ApiError(StatusCode::BAD_REQUEST, "bad_request"));
     }
-    app.take_attempt(&email)?;
-    let tok = librus::login(typed, &b.password).await?;
+    app.take_attempt(email)?;
+    let tok = librus::login(typed, password).await.inspect_err(|e| {
+        if let librus::Error::BadCredentials(words) = e {
+            said.clone_from(words);
+        }
+    })?;
     if librus::me_email(&app.http, &tok.access_token).await?.to_lowercase() != email {
         return Err(ApiError(StatusCode::FORBIDDEN, "not_allowed"));
     }
     let accounts = librus::accounts(&app.http, &tok.access_token).await?;
     let t = Tokens { access: tok.access_token, refresh: tok.refresh_token.unwrap_or_default(), accounts };
     // The server keeps a copy it can open on its own only for notifications; otherwise the copy is the session's.
-    let notify = !app.store.devices(&email).map_err(db_err)?.is_empty();
+    let notify = !app.store.devices(email).map_err(db_err)?.is_empty();
     if notify {
-        app.store.put_tokens(&email, &t).map_err(db_err)?;
+        app.store.put_tokens(email, &t).map_err(db_err)?;
     }
-    let sid = app.store.new_session(&email, (!notify).then_some(&t)).map_err(db_err)?;
-    app.attempts.lock().unwrap_or_else(|p| p.into_inner()).remove(&email);
+    let sid = app.store.new_session(email, (!notify).then_some(&t)).map_err(db_err)?;
+    app.attempts.lock().unwrap_or_else(|p| p.into_inner()).remove(email);
     // Fresh tokens: feeds that stopped on an expired Librus session can go on.
     app.wake.notify_one();
-    let me = me_json(&email, &t, &app);
+    let me = me_json(email, &t, app);
     Ok(([(header::SET_COOKIE, session_cookie(&sid, SESSION_TTL_SECS))], Json(me)).into_response())
 }
 
@@ -526,6 +563,7 @@ async fn revoke(State(app): Shared, headers: HeaderMap, Path(email): Path<String
     app.store.revoke(&email, !fixed).map_err(db_err)?;
     if !fixed {
         app.attempts.lock().unwrap_or_else(|p| p.into_inner()).remove(&email);
+        app.failures().remove(&email);
         web::forget(&app, &email);
     }
     app.access_json()
@@ -664,6 +702,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admins,
         allowed,
         attempts: Mutex::default(),
+        failed: Mutex::default(),
         refresh_lock: tokio::sync::Mutex::default(),
         api: librus::API.to_string(),
         synergia: librus::SYNERGIA.to_string(),
@@ -730,6 +769,7 @@ mod tests {
             admins: HashSet::from(["admin@x.pl".to_string()]),
             allowed: HashSet::from(["user@x.pl".to_string()]),
             attempts: Mutex::default(),
+            failed: Mutex::default(),
             refresh_lock: tokio::sync::Mutex::default(),
             api: "http://127.0.0.1:9".into(),
             synergia: "http://127.0.0.1:9".into(),
@@ -823,6 +863,14 @@ mod tests {
         assert_eq!(ask(Method::DELETE, "/api/admin/emails/guest@x.pl", &user, None).await, refused(403, "forbidden"));
         assert!(!app.store.is_allowed("new@x.pl") && app.store.is_allowed("guest@x.pl"));
         assert_eq!(ask(Method::GET, "/api/admin/emails", &admin, None).await.0, 200);
+        // An address off the list is turned away before Librus is asked.
+        let stranger = json!({ "email": "nobody@x.pl", "password": "x" });
+        assert_eq!(ask(Method::POST, "/api/login", "", Some(stranger)).await, refused(403, "not_allowed"));
+        // The admin's list says why an address last failed to sign in; taking the address off forgets it.
+        app.failures().insert("guest@x.pl".into(), ("bad_credentials", "To dane SYNERGIA".into(), 5));
+        let list = http.get(format!("{base}/api/admin/emails")).header(header::COOKIE, format!("sid={admin}")).send().await.unwrap();
+        let list: Value = list.json().await.unwrap();
+        assert_eq!(list["emails"][0]["failed"], json!({ "reason": "bad_credentials", "said": "To dane SYNERGIA", "at": 5 }));
 
         // Writes outside the lists and paths that could leave the API are refused before any request goes out.
         assert_eq!(ask(Method::POST, "/api/s/1u/Grades", &user, Some(json!({}))).await, refused(403, "bad_path"));
@@ -838,6 +886,7 @@ mod tests {
         assert_eq!(ask(Method::GET, "/api/me", &guest, None).await.0, 200);
         assert_eq!(ask(Method::DELETE, "/api/admin/emails/guest@x.pl", &admin, None).await.0, 200);
         assert_eq!(ask(Method::GET, "/api/me", &guest, None).await, refused(401, "unauthorized"));
+        assert!(app.failures().is_empty());
 
         // Deleting one's own data ends the session and leaves nothing behind.
         assert_eq!(ask(Method::DELETE, "/api/me", &user, None).await.0, 204);

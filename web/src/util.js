@@ -42,6 +42,15 @@ export const fmtPercent = (ratio) => percent.format(ratio);
 /** "4,67" */
 export const fmtAverage = (v) => hundredths.format(v);
 
+/**
+ * A 1 to 6 grade as a number for an average: a plus counted half a grade up, a minus a quarter down (a school may
+ * count them otherwise). Null for any other mark ("+", "np", "0").
+ */
+export const worth = (v) => {
+  const n = parseInt(v, 10);
+  return n >= 1 && n <= 6 ? n + (String(v).endsWith('+') ? 0.5 : String(v).endsWith('-') ? -0.25 : 0) : null;
+};
+
 const plurals = new Intl.PluralRules('pl-PL');
 /** The word that goes with `n`: forms for 1, for 2–4 (22–24…) and for 5 and on, e.g. wiadomość, wiadomości, wiadomości. */
 export const plural = (n, [one, few, many]) => ({ one, few })[plurals.select(n)] ?? many;

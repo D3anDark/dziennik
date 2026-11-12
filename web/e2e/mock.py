@@ -62,7 +62,13 @@ S = {
         {"Id": 3, "Grade": "3", "Date": "2026-10-09", "Semester": 1, "Subject": {"Id": "7"}, "Category": {"Id": 1}},
         {"Id": 4, "Grade": "5", "Date": "2026-10-10", "Semester": 1, "Subject": {"Id": "5"}, "Category": {"Id": 3}},
         {"Id": 5, "Grade": "2", "Date": "2026-10-11", "Semester": 1, "Subject": {"Id": "404"}, "Category": {"Id": 1}},
-        {"Id": 6, "Grade": "4", "Date": "2026-10-12", "Semester": 1, "Subject": {"Id": "405"}, "Category": {"Id": 1}}]},
+        {"Id": 6, "Grade": "4", "Date": "2026-10-12", "Semester": 1, "Subject": {"Id": "405"}, "Category": {"Id": 1}},
+        # Improvements, the link on the newer grade: of a test not written ("-"), and of the 2 above.
+        {"Id": 7, "Grade": "-", "Date": "2026-10-05", "Semester": 1, "Subject": {"Id": "405"}, "Category": {"Id": 1}},
+        {"Id": 8, "Grade": "3", "Date": "2026-10-13", "Semester": 1, "Subject": {"Id": "405"}, "Category": {"Id": 1},
+         "Improvement": {"Id": 7, "Url": "https://api.librus.pl/2.0/Grades/7"}},
+        {"Id": 9, "Grade": "4", "Date": "2026-10-14", "Semester": 1, "Subject": {"Id": "404"}, "Category": {"Id": 2},
+         "Improvement": {"Id": 5, "Url": "https://api.librus.pl/2.0/Grades/5"}}]},
     "Subjects": {"Subjects": [{"Id": 5, "Name": "Matematyka"}, {"Id": "7", "Name": "Język polski"}, {"Id": 11, "Name": "Statystyka"}]},
     "Me": {"Me": {"Account": {"Login": "1001u", "GroupId": 8, "IsPremium": True}}},
     "Grades/Categories": {"Categories": [
@@ -339,7 +345,7 @@ class H(SimpleHTTPRequestHandler):
         STATE["log"].append("POST " + p)
         if p == "/api/login":
             if body.get("password") != "dobre":
-                return self.send(401, {"error": "bad_credentials"})
+                return self.send(401, {"error": "bad_credentials", "detail": "To dane SYNERGIA, nie Konta LIBRUS!"})
             STATE["logged"] = True; return self.send(200, ME)
         if p == "/api/logout":
             STATE["logged"] = False; self.send_response(204); self.end_headers(); return
@@ -349,7 +355,9 @@ class H(SimpleHTTPRequestHandler):
         if p == "/api/admin/emails" and STATE["logged"]:
             if "@" not in body.get("email", "") or "." not in body["email"].split("@")[1]:
                 return self.send(400, {"error": "bad_email"})
-            ACCESS["emails"].insert(0, {"email": body["email"].strip().lower(), "added": 1762675200, "active": False})
+            # A new address, as after its first sign-in that Librus refused.
+            ACCESS["emails"].insert(0, {"email": body["email"].strip().lower(), "added": 1762675200, "active": False,
+                                        "failed": {"reason": "bad_credentials", "said": "To dane SYNERGIA, nie Konta LIBRUS!", "at": 1762678800}})
             return self.send(200, ACCESS)
         rest = p.split("/", 4)[4] if p.startswith("/api/s/") else ""
         if not STATE["logged"] or self.headers.get("content-type") != "application/json":
@@ -405,6 +413,9 @@ class H(SimpleHTTPRequestHandler):
         if u.path in ("/__slow", "/__fast"):
             STATE["slow"] = u.path == "/__slow"
             return self.send(200, {})
+        if u.path in ("/__noavg", "/__avg"):
+            STATE["noavg"] = u.path == "/__noavg"
+            return self.send(200, {})
         # A link that answers late: the page and the API wait, the hashed files the service worker keeps do not.
         if STATE.get("slow") and not u.path.startswith("/assets/"):
             time.sleep(10)
@@ -446,6 +457,9 @@ class H(SimpleHTTPRequestHandler):
                     return self.send(403, {"Status": "Disabled", "MessagePL": "Brak dostępu."})
                 if rest in OTHER:
                     return self.send(200, OTHER[rest])
+            # A school that hides its averages: zeros for a subject, nothing for the rest.
+            if STATE.get("noavg") and rest.endswith("/Averages"):
+                return self.send(200, {"Averages": [{"Subject": {"Id": 5}, "Semester1": "0.00", "Semester2": "0.00", "FullYear": "0.00"}]})
             if rest == "Timetables":
                 return self.send(200, timetable(parse_qs(u.query)["weekStart"][0]))
             if rest in S:
