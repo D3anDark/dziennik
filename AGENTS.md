@@ -1,7 +1,12 @@
 # Dziennik: zasady dla agentów
 
-PWA do dziennika LIBRUS. Serwer Rust/axum w `src/`, frontend Svelte w `web/src/`. Funkcje i konfiguracja są opisane w
-`README.md`; tu są tylko zasady, których nie widać w kodzie.
+PWA do dziennika LIBRUS. Serwer Rust/axum w `src/`, frontend Svelte w `web/src/`. Konfiguracja i skrót funkcji są w `README.md`,
+pełny opis widoków, powiadomień, wyglądu i testów w `docs/szczegoly.md`; tu są tylko zasady, których nie widać w kodzie.
+
+## Dokumentacja
+
+- README zostaje krótki: nowa funkcja dostaje jedną linię w "Co potrafi", a opis jej działania idzie do
+  `docs/szczegoly.md`.
 
 ## Sprawdzanie zmian
 
