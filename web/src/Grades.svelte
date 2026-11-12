@@ -44,11 +44,16 @@
 
   /**
    * The share of the points to be had that the point grades of a list got, in percent, or 0 without any: the sum of
-   * the points over the sum of their categories' maxima, weights left out.
+   * the points over the sum of their categories' maxima, weights left out. A grade in percent is that many points of
+   * 100, by its category's weight as in `mean`, so a subject graded in percent gets their weighted mean.
    */
   function share(list) {
     let [got, max] = [0, 0];
-    for (const g of list) if (g.points) [got, max] = [got + g.points[0], max + g.points[1]];
+    for (const g of list) {
+      const w = g.percent == null ? 1 : g.weight === null ? +forced : Number(g.weight) || 0;
+      const [p, m] = g.points ?? (g.percent == null ? [0, 0] : [g.percent, 100]);
+      [got, max] = [got + p * w, max + m * w];
+    }
     return max ? (got / max) * 100 : 0;
   }
 
@@ -191,7 +196,7 @@
       <p class="muted fresh-key"><span class="dot new"></span>nowa ocena: kropka znika po jej otwarciu</p>
     {/if}
     {#if shown.some((s) => s.own && s.avg.some(([t]) => t === sem))}
-      {@const percent = shown.some((s) => s.own && s.points) ? ' Przy ocenach punktowych to procent zdobytych punktów.' : ''}
+      {@const percent = shown.some((s) => s.own && s.points) ? ' Przy ocenach punktowych to procent zdobytych punktów, przy procentowych ich średnia z wagami.' : ''}
       {#if forced}
         <p class="byline">Średnie wylicza aplikacja z&nbsp;każdej oceny 1–6 (plus +{comma(plus)}, minus −{comma(minus)}, ocena bez wagi raz{halves ? ', rok jako średnia z\u00a0obu semestrów' : ''}), jak wybrano w&nbsp;<a href="#/ustawienia">Ustawieniach</a>.{percent} Szkoła może liczyć inaczej.</p>
       {:else}

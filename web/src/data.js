@@ -119,8 +119,10 @@ async function loadGrades(login) {
         const category = dict.get(String(ref?.Id ?? ref));
         const full = String(gr.Map ?? gr.RealGradeValue ?? gr.Grade ?? '');
         const kind = final(gr, category);
-        // A semester or year grade is one line of its own and stays whole; the rest share a row of chips.
-        const cut = s.short && full.length > 2 && !kind;
+        // A grade in percent ("85%"), in whichever system a school keeps it.
+        const percent = /^(\d{1,3}(?:[.,]\d+)?)\s*%$/.exec(full.trim());
+        // A semester or year grade is one line of its own and stays whole, as does a percent; the rest share a row of chips.
+        const cut = s.short && full.length > 2 && !kind && !percent;
         // Points carry their maximum, so a 5 of 20 is not read as a 5 on the 1 to 6 scale beside it.
         const max = s.path === 'PointGrades' && full && category?.ValueTo != null ? `/${category.ValueTo}` : '';
         const value = cut ? full.slice(0, 2).toUpperCase() : full + max;
@@ -140,6 +142,7 @@ async function loadGrades(login) {
           // What a point grade got out of what could be had, for the share the app counts; null off that system, for a
           // mark that is no number ("nb") and for a category without a maximum.
           points: s.path === 'PointGrades' && Number.isFinite(got) && category?.ValueTo > 0 ? [got, Number(category.ValueTo)] : null,
+          percent: percent ? Number(percent[1].replace(',', '.')) : null,
           // null: the category does not count to the average; one that counts without a weight counts once
           weight: category?.CountToTheAverage ? (category.Weight ?? 1) : null,
           teacher: gr.AddedBy?.Id ? person(users.get(String(gr.AddedBy.Id))) : '',

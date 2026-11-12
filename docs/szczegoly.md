@@ -12,11 +12,12 @@ JSON. Na stronie Synergii wysyła wyłącznie formularze z listy `WEB_WRITES`. H
 ## Demo
 
 Wersja demo: <https://d3andark.github.io/dziennik/>. To ten sam frontend z przykładowymi danymi rodzica trojga dzieci
-(trzecie chodzi do szkoły z ocenami punktowymi, literowymi, słownymi i opisowymi, bez średnich z Librusa i z własnym
-rodzajem frekwencji), bez logowania i bez serwera: `web/src/demo.js` odpowiada na zapytania aplikacji w przeglądarce,
-daty idą za zegarem urządzenia albo za dniem wybranym w banerze demo (styczeń, marzec, czerwiec, lipiec: oceny i
-średnie wokół końca semestru i roku). Build: `cd web && npm run demo` (katalog `web/dist-demo`, ścieżki względne, bez
-service workera i powiadomień); `.github/workflows/demo.yml` publikuje go na GitHub Pages przy każdym pushu na `main`.
+(trzecie chodzi do szkoły z ocenami punktowymi, procentowymi, literowymi, słownymi i opisowymi, bez średnich z Librusa
+i z własnym rodzajem frekwencji), bez logowania i bez serwera: `web/src/demo.js` odpowiada na zapytania aplikacji w
+przeglądarce, daty idą za zegarem urządzenia albo za dniem wybranym w banerze demo (styczeń, marzec, czerwiec, lipiec:
+oceny i średnie wokół końca semestru i roku). Build: `cd web && npm run demo` (katalog `web/dist-demo`, ścieżki
+względne, bez service workera i powiadomień); `.github/workflows/demo.yml` publikuje go na GitHub Pages przy każdym
+pushu na `main`.
 
 Link do demo ma własny podgląd (`demoEmbed` w `web/vite.config.js`, tylko w buildzie demo): na Discordzie kartę z
 komponentów ([Component Embeds](https://docs.discord.com/developers/link-previews/component-embeds): jeden Container,
@@ -152,7 +153,8 @@ przeniesienia jest szary. Ostatnie oceny na starcie są ułożone i datowane po 
 "zw" i "nkl" (pełne słowo w `title`). Skala 1-6 idzie od czerwieni przez pomarańcz, bursztyn i limonkę do zieleni;
 ocena końcowa jest w pełnym kolorze, spoza skali ma obwódkę. Rok przy dacie pada tylko poza bieżącym rokiem szkolnym.
 W planie dzień z odwołaną lekcją ma czerwoną kropkę, dzień z inną zmianą pusty pierścień. Ocena punktowa ma swoje maksimum
-("5/20"), żeby nie czytać jej jak oceny ze skali 1-6. Na czerwono jest tylko to, co jest problemem (lekcja odwołana,
+("5/20"), żeby nie czytać jej jak oceny ze skali 1-6. Ocena procentowa ("85%", w dowolnym z systemów ocen) nie jest
+oceną 1-6: przedmiot oceniany w procentach ma ich średnią z wagami kategorii. Na czerwono jest tylko to, co jest problemem (lekcja odwołana,
 zadanie po terminie, nieobecność nieusprawiedliwiona, uwaga negatywna, błąd). Na telefonie godzina końca lekcji stoi
 pod godziną początku. Bez sieci pasek mówi, kiedy serwer odpowiedział ostatni raz (zapamiętane w `localStorage`).
 Krój Geist jest serwowany z aplikacji (`@fontsource-variable/geist`), bo CSP nie wpuszcza obcych źródeł.

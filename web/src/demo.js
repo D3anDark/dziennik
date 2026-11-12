@@ -49,8 +49,8 @@ const PARENT = 100;
 
 /**
  * The three children of one parent. `teachers` maps subject to teacher, `week` lists subjects by lesson, Monday first.
- * The third goes to another school, for what the first two never meet: subjects graded in points, in letters with a
- * phrase and in words (`systems`), 1 to 6 grades kept as descriptive ones, averages Librus does not send (`hidden`)
+ * The third goes to another school, for what the first two never meet: subjects graded in points, in percent, in
+ * letters with a phrase and in words (`systems`), 1 to 6 grades kept as descriptive ones, averages Librus does not send (`hidden`)
  * and a kind of attendance of the school's own.
  */
 const STUDENTS = {
@@ -68,7 +68,7 @@ const STUDENTS = {
     name: 'Maja Kowalczyk', user: 103, base: 3000, cls: [6, 'c'], tutor: 9, skill: 4.3,
     teachers: { 1: 9, 2: 8, 3: 3, 5: 5, 10: 10, 11: 11, 12: 11, 13: 12, 14: 9, 15: 6, 16: 14 },
     week: [[2, 1, 3, 15, 13], [1, 2, 5, 10, 11, 14], [3, 2, 1, 12, 13], [15, 1, 2, 16, 5], [2, 3, 1, 10, 13]],
-    systems: { 2: 'points', 3: 'points', 10: 'described', 11: 'letters', 12: 'letters', 16: 'letters', 13: 'words' },
+    systems: { 2: 'points', 3: 'points', 15: 'percent', 10: 'described', 11: 'letters', 12: 'letters', 16: 'letters', 13: 'words' },
     hidden: true,
     school: 'Szkoła Podstawowa nr 12 im. Marii Skłodowskiej-Curie',
   },
@@ -157,12 +157,14 @@ function build(login) {
   });
   const add = (subject, date, category, value) => grades.push({ Id: grades.length + 1, Grade: value, ...stamp(subject, date), Category: { Id: category } });
   // The grades of the other systems, by system (`systems` of the student): points out of a category's maximum near
-  // the child's skill, a letter with its phrase, a 1 to 6 grade kept as a descriptive one, a word.
+  // the child's skill, a letter with its phrase, a 1 to 6 grade kept as a descriptive one, a word. A percent is a
+  // grade of the 1 to 6 list, as a school with that scale keeps it.
   const other = { points: [], letters: [], described: [], words: [] };
+  const part = (max) => Math.round(max * Math.min(1, Math.max(0.2, (s.skill - 1) / 5 + (rnd() - 0.5) * 0.4)));
   const elsewhere = {
     points: (subject, date) => {
       const category = pick(rnd, POINT_CATEGORIES);
-      const got = Math.round(category.ValueTo * Math.min(1, Math.max(0.2, (s.skill - 1) / 5 + (rnd() - 0.5) * 0.4)));
+      const got = part(category.ValueTo);
       return { ...stamp(subject, date), Category: { Id: category.Id }, Grade: String(got), GradeValue: got };
     },
     letters: (subject, date) => {
@@ -183,7 +185,8 @@ function build(login) {
       for (const date of days.sort(() => rnd() - 0.5).slice(0, count)) {
         const system = s.systems?.[subject];
         const category = pick(rnd, GRADED_BY[kindOf(subject)]);
-        if (system) other[system].push(elsewhere[system](subject, date));
+        if (system === 'percent') add(subject, date, category, `${part(100)}%`);
+        else if (system) other[system].push(elsewhere[system](subject, date));
         else add(subject, date, category, value(subject, category));
       }
     }

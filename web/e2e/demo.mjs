@@ -115,14 +115,15 @@ const { data: marchShot } = await send('Page.captureScreenshot', { format: 'png'
 await writeFile(`${out}/demo-desktop-oceny-marzec.png`, Buffer.from(marchShot, 'base64'));
 
 // The third child goes to a school graded otherwise, seen in that March: points out of a category's maximum with the
-// share of them, letters, words, the pupil described as a whole, no averages from Librus and a kind of attendance of
+// share of them, percents with their mean, letters, words, the pupil described as a whole, no averages from Librus and a kind of attendance of
 // the school's own.
 await js(`[...document.querySelectorAll('.side .account')].find((b) => b.innerText.includes('Maja')).click()`);
 const row = (name) => `([...document.querySelectorAll('main .sheet section')].find((x) => x.innerText.startsWith('${name}'))?.innerText ?? '').replace(/\\s+/g, ' ')`;
 await until(`${loaded} && document.querySelector('.side .account[aria-pressed=true]').innerText.includes('Maja') && ${row('Matematyka')}.includes('/30')`);
-const third = await js(`[${['Matematyka', 'Technika', 'Wychowanie fizyczne', 'Oceny opisowe', 'Język polski', 'Informatyka'].map(row)}, document.querySelector('main').innerText]`);
+const third = await js(`[${['Matematyka', 'Technika', 'Wychowanie fizyczne', 'Oceny opisowe', 'Język polski', 'Informatyka', 'Przyroda'].map(row)}, document.querySelector('main').innerText]`);
 check('third child: points with their share, letters, words, the pupil described, averages the app counts', /śr\. II sem\. [\d,]+%/.test(third[0]) &&
-  / [ABC]( |$)/.test(third[1]) && / ZA( |$)/.test(third[2]) && third[3].startsWith('Oceny opisowe') && third[6].includes('Średnie wylicza aplikacja'), third.slice(0, 4));
+  / [ABC]( |$)/.test(third[1]) && / ZA( |$)/.test(third[2]) && third[3].startsWith('Oceny opisowe') && third[7].includes('Średnie wylicza aplikacja'), third.slice(0, 4));
+check('third child: grades in percent, and their mean in percent', /^Przyroda śr\. II sem\. [\d,]+%.* Bieżące( \d+%)+/.test(third[6]), third[6]);
 check('third child: an improved grade shows with its improvement', third[4].includes('poprawiona na'), third[4]);
 const { data: thirdShot } = await send('Page.captureScreenshot', { format: 'png' });
 await writeFile(`${out}/demo-desktop-oceny-punkty.png`, Buffer.from(thirdShot, 'base64'));

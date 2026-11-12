@@ -44,11 +44,12 @@ export const fmtAverage = (v) => hundredths.format(v);
 
 /**
  * A 1 to 6 grade as a number for an average: a plus counted half a grade up and a minus a quarter down, unless
- * `plus` and `minus` say otherwise (PLUS and MINUS below: schools differ). Null for any other mark ("+", "np", "0").
+ * `plus` and `minus` say otherwise (PLUS and MINUS below: schools differ). Null for any other mark ("+", "np", "0",
+ * "5%").
  */
 export const worth = (v, plus = 0.5, minus = 0.25) => {
   const n = parseInt(v, 10);
-  return n >= 1 && n <= 6 ? n + (String(v).endsWith('+') ? plus : String(v).endsWith('-') ? -minus : 0) : null;
+  return n >= 1 && n <= 6 && !String(v).includes('%') ? n + (String(v).endsWith('+') ? plus : String(v).endsWith('-') ? -minus : 0) : null;
 };
 
 const plurals = new Intl.PluralRules('pl-PL');
@@ -67,7 +68,7 @@ export function initials(name) {
 /** Grade colour class: g1..g6 by the leading digit, g0 for marks like "+", "np", "bz". */
 export const gradeTone = (v) => {
   const n = parseInt(String(v), 10);
-  return n >= 1 && n <= 6 ? `g${n}` : 'g0';
+  return n >= 1 && n <= 6 && !String(v).includes('%') ? `g${n}` : 'g0';
 };
 
 /** A switch of "Ustawienia", kept on this device: on is "1" under its key. Without storage it reads as off. */

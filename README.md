@@ -14,7 +14,8 @@ Hasła nie zapisuje, tokeny trzyma zaszyfrowane.
   zastępstwami i przerwami, frekwencja, terminarz, zadania domowe, tematy lekcji, wiadomości, ogłoszenia, uwagi,
   zachowanie, klasa i nauczyciele.
 - **Oceny:** średnie także wtedy, gdy szkoła ich nie podaje albo wpisuje oceny jako opisowe, przy punktach procent
-  zdobytych punktów, średnia ze wszystkich przedmiotów, symulator "co jeśli dostanę 5".
+  zdobytych punktów, przy ocenach procentowych ich średnia, średnia ze wszystkich przedmiotów, symulator "co jeśli
+  dostanę 5".
 - **Wiadomości:** czytanie, pisanie i odpowiadanie, załączniki do pobrania, "Oznacz jako przeczytane" z potwierdzeniem.
   Konta bez Mobilnych Dodatków czytają i piszą przez stronę Synergii.
 - **Powiadomienia** (Web Push): zmiany w dzienniku co 10 minut, szczęśliwy numerek, przerwy. Rodzaje i cisza nocna
