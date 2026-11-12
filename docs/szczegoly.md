@@ -11,11 +11,12 @@ JSON. Na stronie Synergii wysyła wyłącznie formularze z listy `WEB_WRITES`. H
 
 ## Demo
 
-Wersja demo: <https://d3andark.github.io/dziennik/>. To ten sam frontend z przykładowymi danymi rodzica dwójki dzieci,
-bez logowania i bez serwera: `web/src/demo.js` odpowiada na zapytania aplikacji w przeglądarce, daty idą za zegarem
-urządzenia albo za dniem wybranym w banerze demo (styczeń, marzec, czerwiec, lipiec: oceny i średnie wokół końca
-semestru i roku). Build: `cd web && npm run demo` (katalog `web/dist-demo`, ścieżki względne, bez service workera i
-powiadomień); `.github/workflows/demo.yml` publikuje go na GitHub Pages przy każdym pushu na `main`.
+Wersja demo: <https://d3andark.github.io/dziennik/>. To ten sam frontend z przykładowymi danymi rodzica trojga dzieci
+(trzecie chodzi do szkoły z ocenami punktowymi, literowymi, słownymi i opisowymi, bez średnich z Librusa i z własnym
+rodzajem frekwencji), bez logowania i bez serwera: `web/src/demo.js` odpowiada na zapytania aplikacji w przeglądarce,
+daty idą za zegarem urządzenia albo za dniem wybranym w banerze demo (styczeń, marzec, czerwiec, lipiec: oceny i
+średnie wokół końca semestru i roku). Build: `cd web && npm run demo` (katalog `web/dist-demo`, ścieżki względne, bez
+service workera i powiadomień); `.github/workflows/demo.yml` publikuje go na GitHub Pages przy każdym pushu na `main`.
 
 Link do demo ma własny podgląd (`demoEmbed` w `web/vite.config.js`, tylko w buildzie demo): na Discordzie kartę z
 komponentów ([Component Embeds](https://docs.discord.com/developers/link-previews/component-embeds): jeden Container,

@@ -42,12 +42,17 @@ const USERS = [
   [5, 'Marek', 'Wójcik'], [6, 'Agnieszka', 'Kamińska'], [7, 'Magdalena', 'Dąbrowska'], [8, 'Paweł', 'Szymański'],
   [9, 'Ewa', 'Mazur'], [10, 'Michał', 'Krawczyk'], [11, 'Anna', 'Piotrowska'], [12, 'Piotr', 'Kaczmarek'],
   [13, 'Renata', 'Wróbel'], [14, 'Jacek', 'Nowicki'], [20, 'Sekretariat', 'null'],
-  [100, 'Anna', 'Kowalczyk'], [101, 'Zuzanna', 'Kowalczyk'], [102, 'Antoni', 'Kowalczyk'],
+  [100, 'Anna', 'Kowalczyk'], [101, 'Zuzanna', 'Kowalczyk'], [102, 'Antoni', 'Kowalczyk'], [103, 'Maja', 'Kowalczyk'],
 ].map(([Id, FirstName, LastName]) => ({ Id, FirstName, LastName }));
 const HOURS = [['08:00', '08:45'], ['08:55', '09:40'], ['09:50', '10:35'], ['10:50', '11:35'], ['11:55', '12:40'], ['12:50', '13:35'], ['13:45', '14:30']];
 const PARENT = 100;
 
-/** The two children of one parent. `teachers` maps subject to teacher, `week` lists subjects by lesson, Monday first. */
+/**
+ * The three children of one parent. `teachers` maps subject to teacher, `week` lists subjects by lesson, Monday first.
+ * The third goes to another school, for what the first two never meet: subjects graded in points, in letters with a
+ * phrase and in words (`systems`), 1 to 6 grades kept as descriptive ones, averages Librus does not send (`hidden`)
+ * and a kind of attendance of the school's own.
+ */
 const STUDENTS = {
   demo1: {
     name: 'Zuzanna Kowalczyk', user: 101, base: 1000, cls: [7, 'b'], tutor: 1, skill: 4.6,
@@ -59,7 +64,25 @@ const STUDENTS = {
     teachers: { 1: 13, 2: 2, 3: 3, 5: 5, 10: 10, 11: 11, 12: 11, 13: 12, 14: 13, 15: 6, 16: 14 },
     week: [[1, 2, 15, 3, 13], [2, 1, 5, 16, 13, 14], [3, 1, 2, 12, 10], [15, 2, 1, 11, 13], [1, 3, 2, 15, 13]],
   },
+  demo3: {
+    name: 'Maja Kowalczyk', user: 103, base: 3000, cls: [6, 'c'], tutor: 9, skill: 4.3,
+    teachers: { 1: 9, 2: 8, 3: 3, 5: 5, 10: 10, 11: 11, 12: 11, 13: 12, 14: 9, 15: 6, 16: 14 },
+    week: [[2, 1, 3, 15, 13], [1, 2, 5, 10, 11, 14], [3, 2, 1, 12, 13], [15, 1, 2, 16, 5], [2, 3, 1, 10, 13]],
+    systems: { 2: 'points', 3: 'points', 10: 'described', 11: 'letters', 12: 'letters', 16: 'letters', 13: 'words' },
+    hidden: true,
+    school: 'Szkoła Podstawowa nr 12 im. Marii Skłodowskiej-Curie',
+  },
 };
+
+/** What the third child's school grades with, beside the 1 to 6 scale. */
+const POINT_CATEGORIES = [
+  { Id: 1, Name: 'Sprawdzian', ValueFrom: 0, ValueTo: 30, Weight: 3 },
+  { Id: 2, Name: 'Kartkówka', ValueFrom: 0, ValueTo: 10, Weight: 2 },
+  { Id: 3, Name: 'Praca domowa', ValueFrom: 0, ValueTo: 5, Weight: 1 },
+];
+const SKILLS = ['Zaangażowanie', 'Wykonanie pracy', 'Samodzielność', 'Praca na lekcji'].map((Name, i) => ({ Id: i + 1, Name }));
+const LETTERS = { A: 'Opanowane w pełni.', B: 'Opanowane, z drobnymi brakami.', C: 'Wymaga jeszcze ćwiczeń.' };
+const WHOLE = [{ Id: 1, Name: 'Diagnoza na początku roku' }, { Id: 2, Name: 'Ocena śródroczna' }];
 
 const CATEGORIES = [
   { Id: 1, Name: 'Sprawdzian', Weight: 3, CountToTheAverage: true },
@@ -128,11 +151,27 @@ function build(login) {
 
   // Grades on the days the subject has lessons, two of them from the last school day so Start has news.
   const grades = [];
-  const add = (subject, date, category, value) =>
-    grades.push({
-      Id: grades.length + 1, Grade: value, Date: date, AddDate: `${date} ${12 + Math.floor(rnd() * 4)}:${String(Math.floor(rnd() * 60)).padStart(2, '0')}:00`,
-      Semester: semester(date), Subject: { Id: subject }, Category: { Id: category }, AddedBy: { Id: s.teachers[subject] },
-    });
+  const stamp = (subject, date) => ({
+    Date: date, AddDate: `${date} ${12 + Math.floor(rnd() * 4)}:${String(Math.floor(rnd() * 60)).padStart(2, '0')}:00`,
+    Semester: semester(date), Subject: { Id: subject }, AddedBy: { Id: s.teachers[subject] },
+  });
+  const add = (subject, date, category, value) => grades.push({ Id: grades.length + 1, Grade: value, ...stamp(subject, date), Category: { Id: category } });
+  // The grades of the other systems, by system (`systems` of the student): points out of a category's maximum near
+  // the child's skill, a letter with its phrase, a 1 to 6 grade kept as a descriptive one, a word.
+  const other = { points: [], letters: [], described: [], words: [] };
+  const elsewhere = {
+    points: (subject, date) => {
+      const category = pick(rnd, POINT_CATEGORIES);
+      const got = Math.round(category.ValueTo * Math.min(1, Math.max(0.2, (s.skill - 1) / 5 + (rnd() - 0.5) * 0.4)));
+      return { ...stamp(subject, date), Category: { Id: category.Id }, Grade: String(got), GradeValue: got };
+    },
+    letters: (subject, date) => {
+      const letter = pick(rnd, ['A', 'A', 'B', 'B', 'C']);
+      return { ...stamp(subject, date), Skill: { Id: 1 + Math.floor(rnd() * 3) }, Map: letter, Phrase: LETTERS[letter] };
+    },
+    described: (subject, date) => ({ ...stamp(subject, date), Skill: { Id: 4 }, Map: mark(rnd, s.skill) }),
+    words: (subject, date) => ({ ...stamp(subject, date), Grade: pick(rnd, ['zaliczono', 'zaliczono', 'zaliczono', 'brak stroju']) }),
+  };
   const value = (subject, category) =>
     category === 6 ? (rnd() < 0.85 ? '+' : '-') : mark(rnd, kindOf(subject) === 'pe' || kindOf(subject) === 'arts' ? s.skill + 0.8 : s.skill);
   for (const subject of subjects.filter((x) => x !== 14)) {
@@ -142,15 +181,32 @@ function build(login) {
       const days = all.filter((d) => semester(d) === sem && on(d).includes(subject));
       const count = Math.min(days.length, Math.max(1, Math.round(((2 + perWeek * 1.5) * days.length) / (16 * perWeek))));
       for (const date of days.sort(() => rnd() - 0.5).slice(0, count)) {
+        const system = s.systems?.[subject];
         const category = pick(rnd, GRADED_BY[kindOf(subject)]);
-        add(subject, date, category, value(subject, category));
+        if (system) other[system].push(elsewhere[system](subject, date));
+        else add(subject, date, category, value(subject, category));
       }
     }
   }
   const last = past.at(-1);
-  for (const subject of on(last).filter((x) => x < 11).slice(0, 2)) add(subject, last, 2, value(subject, 2));
+  for (const subject of on(last).filter((x) => x < 11 && !s.systems?.[x]).slice(0, 2)) add(subject, last, 2, value(subject, 2));
+  // A test failed and written again: the improvement names the grade it improved, as Librus does.
+  const retaken = subjects[0];
+  add(retaken, ago(21), 1, '2');
+  const failed = grades.at(-1);
+  add(retaken, ago(14), 1, '4');
+  const improvement = grades.at(-1);
   grades.sort((p, q) => p.Date.localeCompare(q.Date));
   grades.forEach((g, i) => (g.Id = i + 1));
+  improvement.Improvement = { Id: failed.Id };
+  for (const list of Object.values(other)) list.sort((p, q) => p.Date.localeCompare(q.Date)).forEach((g, i) => (g.Id = i + 1));
+  // The pupil as a whole, in sentences: at the start of the year, and again once the first semester is over.
+  const whole = s.systems
+    ? [
+        { GradeGroupId: 1, Grade: `${s.name.split(' ')[0]} dobrze czyta i liczy w pamięci, chętnie pracuje w grupie. Do ćwiczenia: staranność zapisu.`, AddDate: `${all[0]} 15:00:00` },
+        ...(month >= 2 && month <= 8 ? [{ GradeGroupId: 2, Grade: `${s.name.split(' ')[0]} pracuje systematycznie i zabiera głos na lekcjach. Sprawdziany pisze coraz pewniej, zadania domowe oddaje w terminie.`, AddDate: `${year}-01-23 15:00:00` }] : []),
+      ].map((g, i) => ({ ...g, Id: i + 1, AddedBy: { Id: s.tutor } }))
+    : [];
   const comments = grades.filter((g) => g.Category.Id === 1 && rnd() < 0.5).map((g) => ((g.Comments = [{ Id: g.Id }]), { Id: g.Id, Text: pick(rnd, COMMENTS) }));
 
   // Final and proposed grades by the time of year.
@@ -177,7 +233,8 @@ function build(login) {
   odd.set(`${ago(6)}/${on(ago(6)).length}`, 1);
   if (login === 'demo2') odd.set(`${ago(15)}/3`, 1);
   const pe = past.findLast((d) => on(d).includes(13));
-  odd.set(`${pe}/${lessonNo(pe, 13)}`, 4);
+  // The third child's school has a kind of its own, a release for a competition.
+  odd.set(`${pe}/${lessonNo(pe, 13)}`, s.systems ? 51 : 4);
   const attendances = past.flatMap((date) =>
     on(date).map((subject, i) => ({
       Id: `${date}/${i + 1}`, Date: date, LessonNo: String(i + 1), Type: { Id: odd.get(`${date}/${i + 1}`) ?? 100 }, Lesson: { Id: lessonOf(subject) }, Semester: semester(date),
@@ -194,44 +251,51 @@ function build(login) {
     { from: 20, at: unix(back(4), '09:12'), subject: 'Ubezpieczenie NNW', body: 'Przypominamy o opłaceniu ubezpieczenia NNW na bieżący rok szkolny. Szczegóły na tablicy ogłoszeń przy sekretariacie.' },
     { from: 3, at: unix(back(8), '18:30'), subject: 'Szkolny konkurs językowy', body: `Dzień dobry,<br>zachęcam do zgłoszenia dziecka do szkolnego konkursu z języka angielskiego. ${first} ma szansę na dobry wynik. Zgłoszenia przyjmuję do końca miesiąca.<br><br>Joanna Zielińska` },
     { from: s.tutor, at: unix(back(15), '20:01'), subject: 'Zebranie z rodzicami', body: 'Szanowni Państwo,<br>zapraszam na zebranie. Omówimy wyniki w nauce, frekwencję i plan wycieczki. Proszę o potwierdzenie obecności.' },
-    { to: s.tutor, at: unix(back(5), '07:15'), subject: `Nieobecność: ${first}`, body: `Dzień dobry,<br>proszę o usprawiedliwienie nieobecności ${first === 'Zuzanna' ? 'Zuzanny' : 'Antoniego'} w ubiegłym tygodniu z powodu choroby.<br><br>Z poważaniem<br>Anna Kowalczyk` },
+    { to: s.tutor, at: unix(back(5), '07:15'), subject: `Nieobecność: ${first}`, body: `Dzień dobry,<br>proszę o usprawiedliwienie nieobecności ${{ Zuzanna: 'Zuzanny', Antoni: 'Antoniego', Maja: 'Mai' }[first]} w ubiegłym tygodniu z powodu choroby.<br><br>Z poważaniem<br>Anna Kowalczyk` },
   ].map((m, i) => ({ ...m, Id: String(s.base + i + 1), read: !m.unread }));
 
-  const homework = (login === 'demo1'
-    ? [
-        [1, 'Charakterystyka bohatera', 'Napisz charakterystykę Ebenezera Scrooge’a (co najmniej 200 słów). Skorzystaj z karty pracy.', back(3), ahead(2), { read: true, files: ['karta-pracy.pdf'] }],
-        [2, 'Równania', 'Podręcznik str. 132, zadania 1–6. Zadanie 7 dla chętnych.', back(1), ahead(1), {}],
-        [3, 'Workbook', 'Workbook p. 45, ex. 1–4. Learn the new words from Unit 4.', back(6), back(1), { read: true }],
-        [6, 'Plakat: układ krążenia', 'Przygotujcie w parach plakat o budowie serca i krwiobiegu, format A3.', back(8), ahead(7), { read: true }],
-        [5, 'Notatka', 'Notatka w zeszycie: reformy Sejmu Czteroletniego.', back(12), back(7), { read: true, done: true }],
-      ]
-    : [
-        [1, 'Opowiadanie', 'Napisz opowiadanie o przygodzie na wycieczce (pół strony).', back(2), ahead(3), {}],
-        [2, 'Mnożenie pisemne', 'Ćwiczenia str. 40, zadania 2 i 3.', back(1), ahead(1), { read: true }],
-        [15, 'Zielnik', 'Zbierz i zasusz pięć liści różnych drzew, podpisz każdy z nich.', back(9), ahead(9), { read: true, files: ['instrukcja-zielnik.pdf'] }],
-        [16, 'Znaki drogowe', 'Powtórz znaki drogowe ze stron 18–21.', back(10), back(3), { read: true, done: true }],
-      ]
-  ).map(([subject, Topic, Text, Date, DueDate, x], i) => ({ Id: s.base + i + 1, Topic, Text, Date, DueDate, Lesson: { Id: lessonOf(subject) }, Teacher: { Id: t[subject] }, ...x }));
+  const homework = {
+    demo1: [
+      [1, 'Charakterystyka bohatera', 'Napisz charakterystykę Ebenezera Scrooge’a (co najmniej 200 słów). Skorzystaj z karty pracy.', back(3), ahead(2), { read: true, files: ['karta-pracy.pdf'] }],
+      [2, 'Równania', 'Podręcznik str. 132, zadania 1–6. Zadanie 7 dla chętnych.', back(1), ahead(1), {}],
+      [3, 'Workbook', 'Workbook p. 45, ex. 1–4. Learn the new words from Unit 4.', back(6), back(1), { read: true }],
+      [6, 'Plakat: układ krążenia', 'Przygotujcie w parach plakat o budowie serca i krwiobiegu, format A3.', back(8), ahead(7), { read: true }],
+      [5, 'Notatka', 'Notatka w zeszycie: reformy Sejmu Czteroletniego.', back(12), back(7), { read: true, done: true }],
+    ],
+    demo2: [
+      [1, 'Opowiadanie', 'Napisz opowiadanie o przygodzie na wycieczce (pół strony).', back(2), ahead(3), {}],
+      [2, 'Mnożenie pisemne', 'Ćwiczenia str. 40, zadania 2 i 3.', back(1), ahead(1), { read: true }],
+      [15, 'Zielnik', 'Zbierz i zasusz pięć liści różnych drzew, podpisz każdy z nich.', back(9), ahead(9), { read: true, files: ['instrukcja-zielnik.pdf'] }],
+      [16, 'Znaki drogowe', 'Powtórz znaki drogowe ze stron 18–21.', back(10), back(3), { read: true, done: true }],
+    ],
+    demo3: [
+      [2, 'Ułamki zwykłe', 'Zbiór zadań str. 58, zadania 4–9. Za zadanie jest 5 punktów.', back(1), ahead(2), {}],
+      [1, 'Lektura', 'Przeczytaj rozdziały 3 i 4 „W pustyni i w puszczy”, przygotuj plan wydarzeń.', back(4), ahead(4), { read: true }],
+      [15, 'Obserwacja pogody', 'Przez tydzień zapisuj temperaturę o 8:00 i 15:00, wyniki w tabeli.', back(7), back(1), { read: true, done: true, files: ['tabela-pogody.pdf'] }],
+    ],
+  }[login].map(([subject, Topic, Text, Date, DueDate, x], i) => ({ Id: s.base + i + 1, Topic, Text, Date, DueDate, Lesson: { Id: lessonOf(subject) }, Teacher: { Id: t[subject] }, ...x }));
 
-  const tests = (login === 'demo1'
-    ? [[1, 2, 3, 'Równania i nierówności, dział 4.'], [2, 3, 5, 'Unit 4: słownictwo.'], [1, 5, 9, 'Rozbiory Polski.'], [2, 6, -3, 'Budowa serca.'], [3, 10, 14, 'Prezentacja: bezpieczeństwo w sieci.'], [1, 1, 16, 'Romantyzm: ballady.']]
-    : [[2, 2, 2, 'Tabliczka mnożenia do 100.'], [1, 15, 6, 'Krajobrazy Polski.'], [2, 3, 8, 'Colours and clothes.'], [1, 1, -4, 'Rzeczownik i czasownik.']]
-  ).map(([category, subject, n, content], i) => {
+  const tests = {
+    demo1: [[1, 2, 3, 'Równania i nierówności, dział 4.'], [2, 3, 5, 'Unit 4: słownictwo.'], [1, 5, 9, 'Rozbiory Polski.'], [2, 6, -3, 'Budowa serca.'], [3, 10, 14, 'Prezentacja: bezpieczeństwo w sieci.'], [1, 1, 16, 'Romantyzm: ballady.']],
+    demo2: [[2, 2, 2, 'Tabliczka mnożenia do 100.'], [1, 15, 6, 'Krajobrazy Polski.'], [2, 3, 8, 'Colours and clothes.'], [1, 1, -4, 'Rzeczownik i czasownik.']],
+    demo3: [[1, 2, 4, 'Ułamki zwykłe: 30 punktów do zdobycia.'], [2, 3, 2, 'Irregular verbs, 10 punktów.'], [1, 5, 10, 'Polska Piastów.'], [3, 15, -2, 'Projekt: karmnik dla ptaków.']],
+  }[login].map(([category, subject, n, content], i) => {
     const date = n > 0 ? ahead(n) : back(-n);
     return { Id: s.base + i + 1, Date: date, Category: { Id: category }, Subject: { Id: subject }, Content: content, LessonNo: String(lessonNo(date, subject) ?? 1), CreatedBy: { Id: t[subject] } };
   });
   const calendar = {
     HomeWorks: tests,
-    ClassFreeDays: [{ Id: s.base + 1, DateFrom: ahead(11), DateTo: ahead(12), Type: { Id: 1 }, Name: login === 'demo1' ? 'Toruń: planetarium i Stare Miasto' : 'Ojców: Park Narodowy' }],
+    ClassFreeDays: [{ Id: s.base + 1, DateFrom: ahead(11), DateTo: ahead(12), Type: { Id: 1 }, Name: login === 'demo1' ? 'Toruń: planetarium i Stare Miasto' : login === 'demo2' ? 'Ojców: Park Narodowy' : 'Wieliczka: kopalnia soli' }],
     TeacherFreeDays: [{ Id: s.base + 1, DateFrom: ahead(2), DateTo: ahead(2), Teacher: { Id: login === 'demo1' ? 8 : 5 } }],
     SchoolFreeDays: [{ Id: 1, DateFrom: ahead(18), DateTo: ahead(18), Name: 'Dzień wolny od zajęć dydaktycznych' }],
     ParentTeacherConferences: [{ Id: s.base + 1, Date: ahead(8), Name: 'Zebranie z rodzicami', Time: '17:30:00', Room: ROOMS[14], Topic: 'Wyniki w nauce i frekwencja', Teacher: { Id: s.tutor } }],
   };
 
-  const notes = (login === 'demo1'
-    ? [[1, 1, 'II miejsce w szkolnym konkursie matematycznym. Gratulacje!', 2, 9], [1, 2, 'Pomoc koledze w nadrobieniu zaległości z matematyki.', 1, 25], [0, 3, 'Brak stroju na lekcji wychowania fizycznego.', 12, 17]]
-    : [[1, 4, 'Aktywny udział w przygotowaniu akademii.', 13, 6], [0, 5, 'Rozmowy podczas lekcji mimo upomnień.', 3, 20]]
-  ).map(([Positive, category, Text, teacher, n], i) => ({ Id: s.base + i + 1, Positive, Category: { Id: category }, Text, Teacher: { Id: teacher }, Date: back(n) }));
+  const notes = {
+    demo1: [[1, 1, 'II miejsce w szkolnym konkursie matematycznym. Gratulacje!', 2, 9], [1, 2, 'Pomoc koledze w nadrobieniu zaległości z matematyki.', 1, 25], [0, 3, 'Brak stroju na lekcji wychowania fizycznego.', 12, 17]],
+    demo2: [[1, 4, 'Aktywny udział w przygotowaniu akademii.', 13, 6], [0, 5, 'Rozmowy podczas lekcji mimo upomnień.', 3, 20]],
+    demo3: [[1, 1, 'Wyróżnienie w międzyszkolnym konkursie recytatorskim.', 9, 7], [1, 3, 'Zawsze przygotowana do lekcji, zeszyt prowadzony wzorowo.', 8, 18]],
+  }[login].map(([Positive, category, Text, teacher, n], i) => ({ Id: s.base + i + 1, Positive, Category: { Id: category }, Text, Teacher: { Id: teacher }, Date: back(n) }));
 
   // Topics of the last two weeks, each subject going through its list.
   const seen = {};
@@ -295,6 +359,7 @@ function build(login) {
 
   return {
     s, login, grades, comments, averages, attendances, messages, homework, calendar, notes, realizations, timetable, behaviour, points, activity, groups,
+    other: s.systems && { ...other, whole },
     lucky: 1 + Math.floor(rnd() * 30),
   };
 }
@@ -352,12 +417,24 @@ function synergia(d, method, rest, query, body) {
     Grades: list('Grades', d.grades),
     'Grades/Categories': list('Categories', CATEGORIES),
     'Grades/Comments': list('Comments', d.comments),
-    'Grades/Averages': list('Averages', d.averages),
+    // A school that hides its averages sends none; the app counts them.
+    'Grades/Averages': list('Averages', s.hidden ? [] : d.averages),
+    // Other systems only where a school uses them: the rest Librus does not know, as for the first two children.
+    ...(d.other && {
+      PointGrades: list('Grades', d.other.points),
+      'PointGrades/Categories': list('Categories', POINT_CATEGORIES),
+      TextGrades: list('Grades', d.other.words),
+      DescriptiveGrades: list('Grades', [...d.other.letters, ...d.other.described.map((g) => ({ ...g, Id: g.Id + 1000 }))]),
+      'DescriptiveGrades/Skills': list('Skills', SKILLS),
+      'DescriptiveGrades/Text': list('Grades', d.other.whole),
+      'DescriptiveGrades/Text/Categories': list('Categories', WHOLE),
+    }),
     Attendances: list('Attendances', d.attendances),
     'Attendances/Types': list('Types', [
       { Id: 1, Name: 'Nieobecność', Short: 'nb', Standard: true }, { Id: 2, Name: 'Spóźnienie', Short: 'sp', Standard: true },
       { Id: 3, Name: 'Nieobecność uspr.', Short: 'u', Standard: true }, { Id: 4, Name: 'Zwolnienie', Short: 'zw', Standard: true },
       { Id: 100, Name: 'Obecność', Short: 'ob', Standard: true },
+      { Id: 51, Name: 'Zwolnienie na zawody', Short: 'zz', StandardType: { Id: 4 } },
     ]),
     LuckyNumbers: { LuckyNumber: { LuckyNumber: d.lucky, LuckyNumberDay: T } },
     'Messages/Unread': { UnreadMessages: d.messages.filter((m) => !m.read).length },
@@ -381,7 +458,7 @@ function synergia(d, method, rest, query, body) {
     ]),
     'BehaviourGrades/Points/Comments': list('Comments', d.points.filter((p) => p.text).map((p) => ({ Id: p.Id, Grade: { Id: p.Id }, Text: p.text }))),
     Classes: { Class: { Id: 1, Number: s.cls[0], Symbol: s.cls[1], ClassTutors: [{ Id: s.tutor }] } },
-    Schools: { School: { Id: 1, Name: 'Szkoła Podstawowa nr 7 im. Jana Brzechwy', Street: 'Lipowa', BuildingNumber: '12', Town: 'Kraków' } },
+    Schools: { School: { Id: 1, Name: s.school ?? 'Szkoła Podstawowa nr 7 im. Jana Brzechwy', Street: 'Lipowa', BuildingNumber: '12', Town: 'Kraków' } },
   };
   if (rest in fixed) return fixed[rest];
   if (rest === 'Timetables') return d.timetable(query.get('weekStart'));

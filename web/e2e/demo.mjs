@@ -114,6 +114,28 @@ check('demo: the first semester, its grades and its final grade', /śr\. I sem\.
 const { data: marchShot } = await send('Page.captureScreenshot', { format: 'png' });
 await writeFile(`${out}/demo-desktop-oceny-marzec.png`, Buffer.from(marchShot, 'base64'));
 
+// The third child goes to a school graded otherwise, seen in that March: points out of a category's maximum with the
+// share of them, letters, words, the pupil described as a whole, no averages from Librus and a kind of attendance of
+// the school's own.
+await js(`[...document.querySelectorAll('.side .account')].find((b) => b.innerText.includes('Maja')).click()`);
+const row = (name) => `([...document.querySelectorAll('main .sheet section')].find((x) => x.innerText.startsWith('${name}'))?.innerText ?? '').replace(/\\s+/g, ' ')`;
+await until(`${loaded} && document.querySelector('.side .account[aria-pressed=true]').innerText.includes('Maja') && ${row('Matematyka')}.includes('/30')`);
+const third = await js(`[${['Matematyka', 'Technika', 'Wychowanie fizyczne', 'Oceny opisowe', 'Język polski', 'Informatyka'].map(row)}, document.querySelector('main').innerText]`);
+check('third child: points with their share, letters, words, the pupil described, averages the app counts', /śr\. II sem\. [\d,]+%/.test(third[0]) &&
+  / [ABC]( |$)/.test(third[1]) && / ZA( |$)/.test(third[2]) && third[3].startsWith('Oceny opisowe') && third[6].includes('Średnie wylicza aplikacja'), third.slice(0, 4));
+check('third child: an improved grade shows with its improvement', third[4].includes('poprawiona na'), third[4]);
+const { data: thirdShot } = await send('Page.captureScreenshot', { format: 'png' });
+await writeFile(`${out}/demo-desktop-oceny-punkty.png`, Buffer.from(thirdShot, 'base64'));
+// 1 to 6 grades kept as descriptive ones: an average only once asked for in the settings.
+const forcedBox = `[...document.querySelectorAll('main label.check')].find((l) => l.textContent.trim() === 'Licz średnie z każdej oceny 1–6')?.querySelector('input')`;
+await js(`location.hash = '#/ustawienia'`);
+await until(`${forcedBox}?.checked === false`);
+await js(`${forcedBox}.click()`);
+await js(`location.hash = '#/oceny'`);
+check('third child: descriptive 1 to 6 grades count once the settings say so', !third[5].includes('śr.') && (await until(`${loaded} && ${row('Informatyka')}.includes('śr.')`)), [third[5], await js(row('Informatyka'))]);
+await js(`location.hash = '#/frekwencja'`);
+check("third child: the school's own kind of attendance", await until(`${loaded} && document.querySelector('main').innerText.includes('Zwolnienie na zawody')`));
+
 // The link preview (vite.config.js) is read from the page as it is served, with no script run: there, one Container
 // within Discord's 3000 bytes, and every picture it names a file of the site.
 const html = await (await fetch(`${base}/`)).text();
