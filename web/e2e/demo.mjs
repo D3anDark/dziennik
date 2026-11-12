@@ -34,7 +34,7 @@ const loaded = `!!document.querySelector('main') && !document.querySelector('mai
 await send('Page.enable');
 await send('Runtime.enable');
 await send('Log.enable');
-const VIEWS = ['start', 'oceny', 'plan', 'frekwencja', 'wiadomosci', 'terminarz', 'aktywnosc', 'zadania', 'tematy', 'ogloszenia', 'uwagi', 'zachowanie', 'nauczyciele', 'powiadomienia', 'dostep'];
+const VIEWS = ['start', 'oceny', 'plan', 'frekwencja', 'wiadomosci', 'terminarz', 'aktywnosc', 'zadania', 'tematy', 'ogloszenia', 'uwagi', 'zachowanie', 'nauczyciele', 'powiadomienia', 'ustawienia', 'dostep'];
 for (const [size, width, height, mobile] of [['phone', 390, 844, true], ['desktop', 1280, 800, false]]) {
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
   await send('Page.navigate', { url: `${base}/#/start` });
@@ -54,6 +54,13 @@ for (const [size, width, height, mobile] of [['phone', 390, 844, true], ['deskto
       const { data } = await send('Page.captureScreenshot', { format: 'png' });
       await writeFile(`${out}/demo-${size}-${view}.png`, Buffer.from(data, 'base64'));
     }
+  }
+  if (size === 'desktop') {
+    // A row more would push the sidebar's foot off a 1280×800 screen: the settings are an icon in that foot.
+    const icon = `document.querySelector('.side .me a[href="#/ustawienia"]')`;
+    await js(`${icon}?.click()`);
+    check('desktop: the settings are an icon in the foot of the sidebar, not one more row', (await js(`!document.querySelector('.side nav a[href="#/ustawienia"]')`)) &&
+      (await until(`${icon}?.getAttribute('aria-current') === 'page' && document.querySelector('main h1')?.textContent === 'Ustawienia'`)));
   }
 }
 
@@ -106,6 +113,16 @@ const firstTerm = await js(subject);
 check('demo: the first semester, its grades and its final grade', /śr\. I sem\. \S+ Bieżące .* Semestralna \S+$/.test(firstTerm) && !firstTerm.includes('II sem.'), firstTerm);
 const { data: marchShot } = await send('Page.captureScreenshot', { format: 'png' });
 await writeFile(`${out}/demo-desktop-oceny-marzec.png`, Buffer.from(marchShot, 'base64'));
+
+// The link preview (vite.config.js) is read from the page as it is served, with no script run: there, one Container
+// within Discord's 3000 bytes, and every picture it names a file of the site.
+const html = await (await fetch(`${base}/`)).text();
+const card = html.match(/<script id="discord:component-embed" type="application\/json">(.*?)<\/script>/s)?.[1] ?? '';
+const site = html.match(/<meta property="og:url" content="([^"]+)"/)?.[1] ?? '';
+const pictures = [...new Set([...html.matchAll(/https:\/\/[^"\\]+\.png/g)].map((m) => m[0]))];
+const served = await Promise.all(pictures.map(async (u) => u.startsWith(site) && (await fetch(`${base}/${u.slice(site.length)}`)).headers.get('content-type') === 'image/png'));
+check('demo: the link preview is in the served page, one Container within 3000 bytes, its pictures on the site', JSON.parse(card || '{}').component?.type === 17 &&
+  Buffer.byteLength(card) <= 3000 && pictures.length === 3 && served.every(Boolean) && html.includes('<meta name="twitter:card" content="summary_large_image">'), { bytes: Buffer.byteLength(card), pictures, served });
 
 check('no console errors/exceptions', problems.length === 0, problems);
 process.exit(0);

@@ -1,5 +1,6 @@
 <script module>
   import { clock } from './api.svelte.js';
+  import { named } from './util.js';
 
   /**
    * The time of day, "HH:MM": read again on refresh, on coming back to the app (`clock`) and, while `on()`, as each
@@ -21,7 +22,7 @@
     };
   }
 
-  export const teacher = (t) => (t ? `${t.FirstName ?? ''} ${t.LastName ?? ''}`.trim() : '');
+  export const teacher = (t) => (t ? named(t.FirstName, t.LastName) : '');
 
   /** A subject's hue, the same on every day: its id spread round the wheel by the golden angle, squeezed short of red (a cancellation's). */
   export function hue(s) {

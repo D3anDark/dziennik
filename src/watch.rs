@@ -61,6 +61,25 @@ pub fn wants(off: &str, group: &str) -> bool {
     !off.split(',').any(|g| g == group)
 }
 
+/// A device's quiet hours, "22:00-07:00", as minutes after midnight: (from, to). None for anything else, an empty
+/// span included. What the server keeps is only what this reads.
+pub fn quiet_hours(s: &str) -> Option<(u32, u32)> {
+    let minute = |hm: &str| {
+        let (h, m) = hm.split_once(':')?;
+        let digits = h.len() == 2 && m.len() == 2 && h.bytes().chain(m.bytes()).all(|b| b.is_ascii_digit());
+        let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+        (digits && h < 24 && m < 60).then_some(h * 60 + m)
+    };
+    let (from, to) = s.split_once('-')?;
+    Some((minute(from)?, minute(to)?)).filter(|(from, to)| from != to)
+}
+
+/// Whether a device with these quiet hours gets nothing at `minute` of the Polish day (`breaks::local`). Hours that
+/// end before they start run past midnight.
+pub fn quiet_at(quiet: &str, minute: u32) -> bool {
+    quiet_hours(quiet).is_some_and(|(from, to)| if from < to { (from..to).contains(&minute) } else { minute >= from || minute < to })
+}
+
 struct Change {
     id: String,
     /// Add, Edit or Delete.
@@ -201,9 +220,12 @@ fn lucky(answer: &Value, today: i64) -> Option<String> {
     Some(format!("Szczęśliwy numerek na {when}: {n}"))
 }
 
+/// Sends `message` to the devices, but for those in their quiet hours: what a device misses then is not sent later,
+/// the app's activity view has it.
 pub async fn notify(app: &App, devices: &[&Subscription], message: &Value, ttl: u32) {
     let payload = message.to_string();
-    for d in devices {
+    let minute = breaks::local(breaks::unix_now()).1;
+    for d in devices.iter().filter(|d| !quiet_at(&d.quiet, minute)) {
         match push::send(&app.http, &app.vapid, d, payload.as_bytes(), ttl).await {
             Ok(Sent::Delivered) => {}
             Ok(Sent::Gone) => {
@@ -384,6 +406,19 @@ mod tests {
     }
 
     #[test]
+    fn quiet_hours_of_a_device() {
+        assert_eq!(quiet_hours("22:00-07:00"), Some((22 * 60, 7 * 60)));
+        for bad in ["", "22:00", "22:00-22:00", "24:00-07:00", "22:60-07:00", "2:00-07:00", "+2:00-07:00", "22:00-07:00 ", "22:00–07:00"] {
+            assert_eq!(quiet_hours(bad), None, "{bad:?}");
+        }
+        // From the evening to the morning: past midnight.
+        assert!(quiet_at("22:00-07:00", 23 * 60) && quiet_at("22:00-07:00", 0) && quiet_at("22:00-07:00", 6 * 60 + 59));
+        assert!(!quiet_at("22:00-07:00", 7 * 60) && !quiet_at("22:00-07:00", 21 * 60 + 59));
+        // Within one day, and none at all.
+        assert!(quiet_at("13:00-15:00", 13 * 60) && !quiet_at("13:00-15:00", 15 * 60) && !quiet_at("", 0));
+    }
+
+    #[test]
     fn summary_text() {
         let found = changes(&json!({ "Changes": [
             change(1, "Grades", 10, "Add"),
@@ -493,7 +528,7 @@ mod tests {
         let receiver = PrivateKey::generate(&ECDH_P256).unwrap();
         for name in ["phone", "dead"] {
             let p256dh = receiver.compute_public_key().unwrap().as_ref().to_vec();
-            app.store.add_device("a@x.pl", &Subscription { endpoint: format!("{base}/push/{name}"), p256dh, auth: vec![7; 16], off: String::new() }).unwrap();
+            app.store.add_device("a@x.pl", &Subscription { endpoint: format!("{base}/push/{name}"), p256dh, auth: vec![7; 16], off: String::new(), quiet: String::new() }).unwrap();
         }
         // The breaks start off; this phone turns them on.
         app.store.set_off("a@x.pl", &format!("{base}/push/phone"), "").unwrap();
@@ -571,6 +606,16 @@ mod tests {
         round(&app, false).await;
         assert_eq!(calls(), ["GET /PushChanges?pushDevice=77"]);
         assert_eq!(feed(), [("77".to_string(), String::new())]);
+
+        // In its quiet hours a device gets nothing: the feed is read and acknowledged as ever, no message goes out.
+        let now = breaks::local(breaks::unix_now()).1;
+        let hm = |m: u32| format!("{:02}:{:02}", m % 1440 / 60, m % 60);
+        app.store.set_quiet("a@x.pl", &format!("{base}/push/phone"), &format!("{}-{}", hm(now + 1380), hm(now + 60))).unwrap();
+        *fx.pending.lock().unwrap() = vec![change(11, "Grades", 21, "Add")];
+        round(&app, true).await;
+        let made = calls();
+        assert!(made.iter().any(|c| c.starts_with("DELETE /PushChanges/")) && !made.iter().any(|c| c.starts_with("POST /push/")), "{made:?}");
+        app.store.set_quiet("a@x.pl", &format!("{base}/push/phone"), "").unwrap();
 
         // An address that lost access is not polled, and hears of no breaks.
         app.store.revoke("a@x.pl", false).unwrap();

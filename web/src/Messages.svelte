@@ -118,9 +118,11 @@
 
   /** Synergia has no mark-read call: fetching a message is what marks it, so read each unread one, 4 at a time. */
   async function markAll(list) {
+    const queue = list.filter(unread).map((m) => m.id);
+    // Asked first: a message once fetched stays read, and a school can see that it was opened.
+    if (!confirm(`Oznaczyć wszystkie nieprzeczytane wiadomości (${queue.length}) jako przeczytane? Librus zapisze je jako otwarte i nie da się tego cofnąć.`)) return;
     marking = true;
     markError = '';
-    const queue = list.filter(unread).map((m) => m.id);
     const worker = async () => {
       while (queue.length) await (onWeb ? webMessage(login, queue.pop()) : synergia(login, `Messages/${queue.pop()}?${QUERY}`));
     };

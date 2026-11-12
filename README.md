@@ -14,6 +14,14 @@ urządzenia albo za dniem wybranym w banerze demo (styczeń, marzec, czerwiec, l
 semestru i roku). Build: `cd web && npm run demo` (katalog `web/dist-demo`, ścieżki względne, bez service workera i
 powiadomień); `.github/workflows/demo.yml` publikuje go na GitHub Pages przy każdym pushu na `main`.
 
+Link do demo ma własny podgląd (`demoEmbed` w `web/vite.config.js`, tylko w buildzie demo): na Discordzie kartę z
+komponentów ([Component Embeds](https://docs.discord.com/developers/link-previews/component-embeds): jeden Container,
+do 3000 bajtów, w HTML-u strony) z opisem, dwoma zrzutami ekranu i przyciskami "Otwórz demo" i "Kod i instalacja", a
+wszędzie indziej zwykłą kartę z tagów Open Graph. Zrzuty to `web/demo/embed-start.png` i `web/demo/embed-oceny.png`:
+odświeża je `SHOTS=katalog e2e/demo.sh` (pliki `demo-desktop-start.png` i `demo-desktop-oceny.png`). Adres strony
+demo jest wpisany w `DEMO` w tym pliku: fork z własnym GitHub Pages zmienia go tam. Discord trzyma podgląd około 30
+minut; co odczytał, pokazuje jego [Embed Debugger](https://discord.com/developers/embeds).
+
 Widoki: start (wiersz nowych wiadomości i ocen z linkami, plan dnia, ostatnie oceny, 14 dni terminarza, aktywność), aktywność (nowe, zmienione i
 usunięte oceny, wpisy frekwencji, uwagi, wiadomości, terminy, zmiany planu), oceny ze średnimi i komentarzami (zwykłe,
 punktowe, tekstowe i opisowe: `Grades`, `PointGrades`, `TextGrades`, `DescriptiveGrades`, `DescriptiveTextGrades`,
@@ -25,7 +33,7 @@ wiadomości, ogłoszenia, uwagi, zachowanie, klasa i nauczyciele (klasa, wychowa
 
 Zapisy: wysyłanie wiadomości i odpowiedzi (odbiorcy z grup Librusa, bez rodziców), oznaczanie zadań domowych jako
 przeczytane (przy otwarciu) i wykonane. Wiadomość oznacza się jako przeczytaną przez jej pobranie;
-"Oznacz jako przeczytane" nad listą pobiera nieprzeczytane po 4 naraz. Załączniki wiadomości i zadań
+"Oznacz jako przeczytane" nad listą odebranych (widoczne, gdy coś jest nieprzeczytane) pyta o potwierdzenie i pobiera nieprzeczytane po 4 naraz. Załączniki wiadomości i zadań
 domowych: pobieranie (Librus podaje adres pliku, który otwiera przeglądarka), bez wysyłania.
 
 Wiadomości i zadania domowe Librus udostępnia w API tylko kontom z Mobilnymi Dodatkami: `Messages` odpowiada wtedy
@@ -63,6 +71,11 @@ polskiego, z TTL 5 minut i jednym tagiem, więc kolejna przerwa zastępuje poprz
 Każde urządzenie wyłącza na stronie powiadomień wybrane rodzaje (oceny, zachowanie, frekwencja, uwagi, wiadomości,
 ogłoszenia, zadania, terminarz, plan, numerek, przerwy); wybór leży przy urządzeniu (`devices.off`, `PUT /api/push`).
 
+Cisza nocna (ta sama strona, osobno dla urządzenia): w wybranych godzinach, np. 22:00-07:00, serwer nic na to
+urządzenie nie wysyła (`watch::notify`, `devices.quiet`, ten sam `PUT /api/push` z polem `quiet`). Tego, co w tym
+czasie przyszło, nie wysyła później: jest w "Aktywności". Godziny są w czasie polskim, jak plan lekcji, także gdy
+urządzenie jest w innej strefie.
+
 Klucz VAPID powstaje przy pierwszym starcie i leży zaszyfrowany w SQLite, bez konfiguracji. Najwyżej 5 urządzeń na
 osobę. Wylogowanie wyłącza powiadomienia na tym urządzeniu. Stan kanału każdego ucznia widać na stronie powiadomień.
 
@@ -79,7 +92,7 @@ aktywność. Inne sesje, które z tej kopii korzystały, logują się ponownie. 
 powiadomień logują się raz ponownie, bo ich dotychczasowa kopia jest kasowana.
 
 Czego to nie chroni: hasło przy logowaniu i dane z dziennika przechodzą przez serwer w chwili użycia, a adres e-mail,
-lista dostępu i nazwy uczniów w kopii dla powiadomień są czytelne dla serwera, a dzisiejsze lekcje dla powiadomień
+lista dostępu, nazwy uczniów w kopii dla powiadomień oraz wyłączone rodzaje i godziny ciszy urządzeń są czytelne dla serwera, a dzisiejsze lekcje dla powiadomień
 o przerwach leżą w pamięci procesu do następnego dnia albo wyłączenia powiadomień. Kto ma władzę nad serwerem, może
 podmienić kod i przechwycić dane w locie. Szyfrowanie chroni przed wyciekiem bazy i ciekawskim wglądem w pliki, nie
 przed nieuczciwym operatorem.
@@ -151,7 +164,7 @@ godzinie, inaczej najbliższej numerem (w klasie łączonej nauczyciel wpisuje j
 cudzy). Wpis z przedmiotu, którego tego dnia nie ma w planie, należy do innej grupy i zostaje tylko w terminarzu. Plan
 pobiera do tego terminarz miesięcy, w których leży tydzień. Zastępstwo przekreśla zastąpiony przedmiot i nauczyciela
 przed obecnymi (czytnik ekranu słyszy "Biologia, teraz Chemia"). Notatka nauczyciela do zastępstwa ma kolor tekstu, opis
-przeniesienia jest szary. Ostatnie oceny na starcie są ułożone i datowane po dniu wpisania, ocena semestralna albo roczna ma przy przedmiocie dopisek. W tygodniu zastępstwo ma kółko przed salą, a sprawdzian etykietę pod przedmiotem; nagłówek dnia ma tę samą kropkę co pasek dni. W wierszu przedmiotu oceny idą od najstarszej. Ocena poprawiona i jej poprawa to jeden kafelek, jak "3*" w aplikacji Librusa: stara ocena stoi przekreślona przed nową (czytnik ekranu słyszy "1, poprawiona na 4"), a szczegóły nowej podają starą z datą i opisem; tak samo na starcie i w aktywności. Parę łączy pole `Improvement` oceny z API, poprawą jest późniejsza z dwóch. Oceny mają przełącznik semestrów: I semestr z oceną semestralną i jej propozycją, II z roczną i średnią roczną, oceny opisowe całego roku w obu; na start II, gdy ma już oceny. Na wąskim ekranie średnie schodzą pod nazwę przedmiotu. Gdy Librus nie podaje żadnej średniej (szkoła je ukrywa), aplikacja liczy je sama w przeglądarce i pisze o tym nad listą: średnia ważona ocen 1-6 z kategorii liczonych do średniej (waga z kategorii, bez wagi 1), plus jako +0,5, minus jako -0,25, osobno I semestr, II semestr i rok (wszystkie oceny roku); oceny punktowe, słowne, "np", "+" i oceny końcowe się nie liczą, a poprawiona ocena liczy się obok poprawy. Szkoła może liczyć inaczej, więc to przybliżenie. Usunięty wpis w aktywności ma przekreśloną ikonę swojego widoku. Oceny "zwolniony" i "nieklasyfikowany" mają skrót
+przeniesienia jest szary. Ostatnie oceny na starcie są ułożone i datowane po dniu wpisania, ocena semestralna albo roczna ma przy przedmiocie dopisek. W tygodniu zastępstwo ma kółko przed salą, a sprawdzian etykietę pod przedmiotem; nagłówek dnia ma tę samą kropkę co pasek dni. W wierszu przedmiotu oceny idą od najstarszej. Ocena poprawiona i jej poprawa to jeden kafelek, jak "3*" w aplikacji Librusa: stara ocena stoi przekreślona przed nową (czytnik ekranu słyszy "1, poprawiona na 4"), a szczegóły nowej podają starą z datą i opisem; tak samo na starcie i w aktywności. Parę łączy pole `Improvement` oceny z API, poprawą jest późniejsza z dwóch. Oceny mają przełącznik semestrów: I semestr z oceną semestralną i jej propozycją, II z roczną i średnią roczną, oceny opisowe całego roku w obu; na start II, gdy ma już oceny. Na wąskim ekranie średnie schodzą pod nazwę przedmiotu. Gdy Librus nie podaje żadnej średniej (szkoła je ukrywa), aplikacja liczy je sama w przeglądarce i pisze o tym nad listą: średnia ważona ocen 1-6 z kategorii liczonych do średniej (waga z kategorii, bez wagi 1), plus jako +0,5, minus jako -0,25 (inne wartości do wyboru w "Ustawieniach"), osobno I semestr, II semestr i rok (wszystkie oceny roku); oceny punktowe, słowne, "np", "+" i oceny końcowe się nie liczą, a poprawiona ocena liczy się obok poprawy. Szkoła może liczyć inaczej, więc to przybliżenie. Dla szkoły, która wymaga średniej, a oceny 1-6 wpisuje jako opisowe albo w kategoriach nieliczonych do średniej (Librus nie podaje wtedy żadnej), jest przełącznik "Licz średnie z każdej oceny 1–6" w "Ustawieniach": aplikacja liczy wtedy średnie sama, także gdy Librus je podaje, z każdej oceny, która czyta się jako 1-6, z dowolnego systemu poza punktowym (5 punktów to nie piątka), z wagą kategorii liczonej do średniej, a bez niej raz, a gdy wszystkie wagi w przedmiocie to 0, każda raz (średnia arytmetyczna); przedmiot bez takich ocen zostaje przy średniej z Librusa. Nad listą jest o tym dopisek z linkiem do ustawień. Nad listą stoi też jedna linia o wszystkich przedmiotach: średnia ze średnich pokazanych dla semestru (w II semestrze z rocznych), a gdy są, średnia ocen semestralnych albo rocznych (wcześniej proponowanych); przedmioty punktowe i pojedynczy przedmiot się nie liczą. "Symulator" w pasku ocen dodaje przy przedmiocie oceny na próbę (ocena 1-6 z plusem albo minusem, waga 1-10, najwyżej 20 na przedmiot) i pokazuje średnią semestru, a w II semestrze także roku, przed i po: obie liczy aplikacja tymi samymi regułami, więc "przed" może się różnić od średniej z Librusa. Oceny na próbę nigdzie się nie zapisują i znikają po wyjściu z ocen. Usunięty wpis w aktywności ma przekreśloną ikonę swojego widoku. Oceny "zwolniony" i "nieklasyfikowany" mają skrót
 "zw" i "nkl" (pełne słowo w `title`). Skala 1-6 idzie od czerwieni przez pomarańcz, bursztyn i limonkę do zieleni;
 ocena końcowa jest w pełnym kolorze, spoza skali ma obwódkę. Rok przy dacie pada tylko poza bieżącym rokiem szkolnym.
 W planie dzień z odwołaną lekcją ma czerwoną kropkę, dzień z inną zmianą pusty pierścień. Ocena punktowa ma swoje maksimum
@@ -165,6 +178,23 @@ palcem 1:1, krótki ruch wraca, długi albo szybki przewraca stronę. Przyciski 
 
 Plan na starcie i widok planu idą za zegarem urządzenia: po ostatniej dzisiejszej lekcji pokazują następny dzień
 z lekcjami (w piątek po południu kolejny tydzień). Trwająca lekcja ma znacznik "do końca N min", liczony co minutę.
+"Ustawienia" (w "Więcej", na szerokim ekranie ikona suwaków w stopce paska bocznego) zbierają to, co zapisane w
+`localStorage` urządzenia, nie na serwerze: liczenie średnich z każdej oceny (`forced-averages`), ile w średnich
+liczonych przez aplikację dodaje plus (`plus-worth`: +0,5, +0,33, +0,25 albo nic) i odejmuje minus (`minus-worth`:
+-0,25, -0,33, -0,5 albo nic), z czego jest średnia roczna (`year-average`: wszystkie oceny roku albo średnia ze
+średnich obu semestrów), tryb do zrzutów ekranu i ponowne pokazanie samouczka (kasuje `tour-seen` i ładuje
+Start), motyw (`theme`: systemowy, jasny albo ciemny) i widok planu (`plan-view`: automatycznie, dzień albo tydzień;
+ten sam klucz zapisuje przełącznik w planie). Wybrany motyw nie trzyma drugiej kopii kolorów: `applyTheme` w
+`web/src/util.js` zmienia warunek bloku `prefers-color-scheme: dark` w arkuszu na "zawsze" albo "nigdy", a za nim idą
+`color-scheme` i kolor paska przeglądarki. Ustawienia ocen są jedne dla wszystkich uczniów konta. Niżej "Aplikacja" (instalacja, samouczek, zgłoszenie
+błędu) i "Konto": wylogowanie, które jest też w "Więcej" i w pasku bocznym, oraz "Usuń moje dane" (RODO art. 17),
+tylko tutaj, żeby dało się do niego dojść także na szerokim ekranie, który nie ma "Więcej".
+Tryb do zrzutów ekranu ("Skróć nazwiska" w "Ustawieniach"): osoby to imię i
+pierwsza litera nazwiska ("Anna N."), także uczeń w nagłówku, a adresy e-mail to pierwsza litera i domena
+("k…@gmail.com"). Przełącznik zapisuje `short-names` w `localStorage` i ładuje stronę od nowa, więc żaden widok nie
+trzyma pełnego nazwiska. Nazwy z pól Librusa (imię i nazwisko osobno) są skracane dokładnie; nazwy ze strony Synergii
+("Nowak Anna (nauczyciel)") po pierwszym słowie; etykiety odbiorców wiadomości przez listę osób szkoły, a nieznane do
+samych inicjałów. Treść wiadomości, ogłoszeń i komentarzy zostaje bez zmian, tak jak nazwa szkoły.
 Widok dnia albo tygodnia zostaje zapamiętany na urządzeniu; bez
 wyboru telefon pokazuje dzień, szeroki ekran tydzień. Przycisk "Zainstaluj aplikację" jest w "Więcej" i w pasku
 bocznym, gdy przeglądarka pozwala stronie o to zapytać (Chromium); na iOS zamiast niego jest wskazówka. Na Androidzie

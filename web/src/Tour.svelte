@@ -1,6 +1,7 @@
 <script>
   import { tick } from 'svelte';
   import { session, message, install, byHand, android, DEMO } from './api.svelte.js';
+  import { TOUR_KEY } from './util.js';
   import { supported, current, enable } from './push.js';
   import Icon from './Icon.svelte';
   import Install from './Install.svelte';
@@ -17,8 +18,8 @@
     { at: ['.tabs a[href="#/oceny"]', '.side a[href="#/oceny"]'], title: 'Oceny', text: 'Oceny ze wszystkich przedmiotów. Nowe są wyróżnione, a\u00a0po wybraniu oceny widać jej szczegóły.' },
     { at: ['.tabs a[href="#/plan"]', '.side a[href="#/plan"]'], title: 'Plan', text: 'Lekcje na dziś albo na cały tydzień, z\u00a0zastępstwami i\u00a0odwołanymi lekcjami.' },
     { at: ['.tabs a[href="#/wiadomosci"]', '.side a[href="#/wiadomosci"]'], title: 'Wiadomości', text: 'Wiadomości ze szkoły. Tu też napiszesz nową i\u00a0odpowiesz.' },
-    { at: ['.tabs a[href="#/wiecej"]'], title: 'Więcej', text: 'Reszta dziennika: frekwencja, terminarz, zadania domowe, tematy lekcji, ogłoszenia, uwagi i\u00a0zachowanie. Niżej konto: powiadomienia, prywatność, zgłaszanie błędów i\u00a0wylogowanie.' },
-    { at: ['.side nav'], title: 'Reszta dziennika', text: 'Frekwencja, terminarz, zadania domowe, tematy lekcji, ogłoszenia, uwagi i\u00a0zachowanie. Niżej konto: powiadomienia i\u00a0prywatność.' },
+    { at: ['.tabs a[href="#/wiecej"]'], title: 'Więcej', text: 'Reszta dziennika: frekwencja, terminarz, zadania domowe, tematy lekcji, ogłoszenia, uwagi i\u00a0zachowanie. Niżej konto: powiadomienia, ustawienia, prywatność, zgłaszanie błędów i\u00a0wylogowanie.' },
+    { at: ['.side nav'], title: 'Reszta dziennika', text: 'Frekwencja, terminarz, zadania domowe, tematy lekcji, ogłoszenia, uwagi i\u00a0zachowanie. Niżej konto: powiadomienia i\u00a0prywatność, a\u00a0na dole ustawienia.' },
     { at: ['.bar .picker', '.bar .student', '.side .accounts'], title: 'Uczeń', text: 'Tu widać, czyj dziennik oglądasz. Gdy uczniów jest kilku, tu ich przełączasz.' },
     { at: ['.bar [aria-label="Odśwież"]', '.side [aria-label="Odśwież"]'], title: 'Odświeżanie', text: 'Pobiera najnowsze dane z\u00a0Librusa.' },
     { at: ['.side .me [aria-label="Zgłoś błąd"]'], title: 'Zgłoś błąd', text: 'Coś nie działa? Tu otworzysz formularz zgłoszenia. Jest publiczny, więc nie wpisuj w\u00a0nim danych ze szkoły.' },
@@ -38,7 +39,6 @@
       action: 'push',
     },
   ];
-  const KEY = 'tour-seen';
   const MARGIN = 16;
   const GAP = 12;
   const PAD = 4;
@@ -65,7 +65,7 @@
   // Storage that cannot be read: no tour rather than one on every start.
   function stored() {
     try {
-      return localStorage.getItem(KEY) !== null;
+      return localStorage.getItem(TOUR_KEY) !== null;
     } catch {
       return true;
     }
@@ -129,7 +129,7 @@
   function done() {
     seen = true;
     try {
-      localStorage.setItem(KEY, '1');
+      localStorage.setItem(TOUR_KEY, '1');
     } catch {
       // Not remembered: it shows again next time, nothing else is lost.
     }

@@ -1,6 +1,7 @@
 <script>
   import { untrack } from 'svelte';
-  import { synergia, write, message, resource, drafts } from './api.svelte.js';
+  import { synergia, lookup, write, message, resource, drafts } from './api.svelte.js';
+  import { person, short } from './util.js';
   import Async from './Async.svelte';
   import Icon from './Icon.svelte';
   import { viaWeb, useWeb, groups as webGroups, send as webSend } from './webmail.js';
@@ -19,10 +20,15 @@
         .filter((g) => g.Id !== 'parents' && g.Id !== 'guardians')
         .map((g) => synergia(login, `Messages/ReceiversGroup/${encodeURIComponent(g.Id)}`).then((r) => r.ReceiversGroup?.[0], () => null)),
     );
+    // Screenshot mode (util.js): a label does not say which of its words is the surname; the school's list of people
+    // does. A name not on that list is left as initials.
+    const words = (name) => String(name).toLowerCase().split(/\s+/).filter(Boolean).sort().join(' ');
+    const known = short ? new Map(((await lookup(login, 'Users').catch(() => ({}))).Users ?? []).map((u) => [words(`${u.FirstName} ${u.LastName}`), u])) : null;
+    const brief = (p) => (known ? { ...p, Label: known.has(words(p.Label)) ? person(known.get(words(p.Label))) : String(p.Label).replace(/(\p{L})\p{L}*/gu, '$1.') } : p);
     return loaded.filter(Boolean).flatMap((g) =>
       g.ReceiversSubGroup
-        ? g.ReceiversSubGroup.map((s) => ({ label: `${g.Label}: ${s.Label}`, people: s.Receivers ?? [] }))
-        : [{ label: g.Label, people: g.Receivers ?? [] }],
+        ? g.ReceiversSubGroup.map((s) => ({ label: `${g.Label}: ${s.Label}`, people: (s.Receivers ?? []).map(brief) }))
+        : [{ label: g.Label, people: (g.Receivers ?? []).map(brief) }],
     ).filter((s) => s.people.length);
   }
 

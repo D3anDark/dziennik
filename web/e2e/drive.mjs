@@ -236,12 +236,28 @@ await fetch(`${base}/__noavg`);
 // (5 x 3 + 4,5 x 2) / 5: the semestral 5 and its category stay out. An improved 2 counts beside its 4, a "-" does not.
 const own = await reload(`${counted}.startsWith('Średnie wylicza aplikacja')`);
 const ownHeads = await heads();
+const everySubject = (await text('main .overall')).map((t) => t.replace(/\u00a0/g, ' '));
+check('grades: one line gives the mean of the averages of every subject', JSON.stringify(everySubject) === JSON.stringify(['Wszystkie przedmioty: średnia ze średnich 3,53 (z 4 przedmiotów).']), everySubject);
 check('grades: averages the school hides are counted from the grades and weights, with a note', !noteBefore && own &&
   JSON.stringify(ownHeads) === JSON.stringify({ 'Język polski0': 'śr. I sem. 3,00', Matematyka1: 'śr. I sem. 4,80', Inne2: 'śr. I sem. 3,50', Inne3: 'śr. I sem. 2,80' }), { noteBefore, ownHeads });
 await shot('2-grades-counted');
 await fetch(`${base}/__avg`);
 const back = await reload(`!${counted}`);
 check('grades: with averages from Librus again, its own and no note', back && JSON.stringify(Object.values(await heads())) === JSON.stringify(['', 'śr. I sem. 4,67', '', '']), await heads());
+
+// The simulator: a 6 at weight 3 tried out in Matematyka, (5 x 3 + 4,5 x 2 + 6 x 3) / 8 as the app counts, gone again at a touch.
+await clickText('main .toolbar button', 'Symulator');
+const tryForm = `[...document.querySelectorAll('main section')].find((s) => s.querySelector('h2').textContent === 'Matematyka')?.querySelector('form.try')`;
+await until(`!!${tryForm}`);
+await js(`(() => { const f = ${tryForm}; f.querySelector('[name=value]').value = '6'; f.querySelector('[name=weight]').value = '3'; f.requestSubmit(); })()`);
+await until(`document.querySelectorAll('main .chip.tried').length === 1`);
+const triedOut = (await text('main section .overall')).map((t) => t.replace(/\u00a0/g, ' '));
+await shot('2-grades-simulator');
+await js(`document.querySelector('main .chip.tried').click()`);
+const triedGone = await until(`!document.querySelector('main .chip.tried') && !document.querySelector('main section .overall')`);
+await clickText('main .toolbar button', 'Symulator');
+check('grades: the simulator shows what a grade tried out does to the average, and drops it at a touch', JSON.stringify(triedOut) === JSON.stringify(['Po zmianie: I sem. 4,80 → 5,25']) &&
+  triedGone && (await until(`!document.querySelector('form.try')`)), triedOut);
 
 // A phone opens the plan at one day, in a strip of its week's school days.
 await go('#/plan', `document.querySelectorAll('.days button').length === 5 && !!document.querySelector('main section .lessons')`);
@@ -383,7 +399,7 @@ await shot('4-attendance');
 
 await go('#/wiecej', `document.querySelectorAll('.menu a').length > 0`);
 const menu = await text('.menu a');
-check('more: menu', menu.length === 12 && menu[0] === 'Frekwencja' && menu.includes('Aktywność') && !menu.some((m) => m.startsWith('Wiadomości')) && menu.includes('Tematy lekcji') && menu.includes('Powiadomienia') && menu.includes('Dostęp do aplikacji') && menu.includes('Prywatność'), menu);
+check('more: menu', menu.length === 13 && menu[0] === 'Frekwencja' && menu.includes('Aktywność') && !menu.some((m) => m.startsWith('Wiadomości')) && menu.includes('Tematy lekcji') && menu.includes('Powiadomienia') && menu.includes('Ustawienia') && menu.includes('Dostęp do aplikacji') && menu.includes('Prywatność'), menu);
 check('more: tab current', (await text('nav.tabs a[aria-current=page]'))[0]?.endsWith('Więcej'));
 check('install: no button until the browser offers the app', !(await js(hasButton('Zainstaluj aplikację'))));
 await js(`(() => { const e = new Event('beforeinstallprompt', { cancelable: true }); e.prompt = () => (window.__asked = true); e.userChoice = Promise.resolve({ outcome: 'accepted' }); window.__prevented = !dispatchEvent(e); })()`);
@@ -565,9 +581,17 @@ check('message: DownloadUrl that is not https is refused', badFile === 'closed' 
 await fetch(`${base}/__unread`);
 await go('#/start', loaded);
 await go('#/wiadomosci', `!!document.querySelector('.messages li.unread')`);
+// Asked first, as a school can see that a message was opened: declined, nothing is fetched.
+const fetched = async (since) => (await log()).slice(since).filter((l) => /\/Messages\/\d/.test(l)).length;
+const asked = (await log()).length;
+dialog.accept = false;
+await clickText('main button', 'Oznacz jako przeczytane');
+await sleep(300);
+const declined = /^Oznaczyć wszystkie nieprzeczytane wiadomości \(\d+\) jako przeczytane\?/.test(dialog.text) && (await js(`!!document.querySelector('.messages li.unread')`)) && (await fetched(asked)) === 0;
+dialog.accept = true;
 await clickText('main button', 'Oznacz jako przeczytane');
 await until(`!document.querySelector('.messages li.unread') && !document.querySelector('nav.tabs .badge')`);
-check('messages: mark all read', !(await js(`!!document.querySelector('.messages li.unread')`)) && !(await js(`!!document.querySelector('nav.tabs .badge')`)) &&
+check('messages: mark all read, once confirmed', declined && (await fetched(asked)) > 0 && !(await js(`!!document.querySelector('.messages li.unread')`)) && !(await js(`!!document.querySelector('nav.tabs .badge')`)) &&
   !(await js(`[...document.querySelectorAll('main button')].some((b) => b.textContent.includes('Oznacz jako przeczytane'))`)));
 
 await go('#/ogloszenia', `document.querySelectorAll('main details').length === 2`);
@@ -631,13 +655,28 @@ const feedRows = await rows('main .access li');
 check('push: feed state per student', feedRows[0]?.startsWith('Jan Testowy Sprawdzono 9 lis 2025') && feedRows[1] === 'Ala Testowa Sesja Librusa wygasła. Zaloguj ponownie' &&
   (await js(`[...document.querySelectorAll('main .access li:nth-child(2) button')].map((b) => b.textContent.trim()).join()`)) === 'Zaloguj ponownie', feedRows);
 const pushKinds = await js(`[...document.querySelectorAll('main label.check')].map((l) => (l.querySelector('input').checked ? '+' : '-') + l.textContent.trim())`);
-check('push: kinds of message, as the server keeps them for this device', pushKinds.length === 11 && pushKinds[0] === "+Oceny" && pushKinds[9] === "+Szczęśliwy numerek" && pushKinds[10].startsWith("-Przerwy"), pushKinds);
+check('push: kinds of message, as the server keeps them for this device', pushKinds.length === 12 && pushKinds[0] === "+Oceny" && pushKinds[9] === "+Szczęśliwy numerek" && pushKinds[10].startsWith("-Przerwy") &&
+  pushKinds[11].startsWith('-Nie wysyłaj w'), pushKinds);
 await shot('17-push');
 await clickText('main label.check', 'Szczęśliwy numerek');
 await until(`fetch('/__log').then((r) => r.json()).then((l) => l.some((x) => x.startsWith('PUT /api/push')))`);
 await until(`!document.querySelector('main label.check input').disabled`);
 check('push: a kind turned off is saved for this device', (await log()).includes('PUT /api/push {"endpoint":"https://fcm.googleapis.com/fcm/send/e2e","off":["przerwy","numerek"]}') &&
   !(await js(`[...document.querySelectorAll('main label.check input')][9].checked`)), (await log()).filter((l) => l.includes('/api/push')));
+
+// Quiet hours: the switch saves the usual night, a changed hour the new span, each with what the device turned off.
+const quietSwitch = `[...document.querySelectorAll('main label.check')].at(-1)`;
+await js(`${quietSwitch}.click()`);
+await until(`document.querySelectorAll('main .hours input').length === 2 && !document.querySelector('main .hours input').disabled`);
+await js(`(() => { const to = document.querySelectorAll('main .hours input')[1]; to.value = '06:30'; to.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+await until(`fetch('/__log').then((r) => r.json()).then((l) => l.some((x) => x.includes('"quiet":"22:00-06:30"')))`);
+await until(`!document.querySelector('main .hours input').disabled`);
+await shot('17-push-quiet');
+await js(`${quietSwitch}.click()`);
+await until(`!document.querySelector('main .hours') && !${quietSwitch}.querySelector('input').disabled`);
+const quietPuts = (await log()).filter((l) => l.includes('"quiet"'));
+check('push: quiet hours are saved for this device and taken off again, with what it turned off', JSON.stringify(quietPuts) === JSON.stringify(['22:00-07:00', '22:00-06:30', ''].map((q) =>
+  `PUT /api/push {"endpoint":"https://fcm.googleapis.com/fcm/send/e2e","off":["przerwy","numerek"],"quiet":"${q}"}`)), quietPuts);
 
 await clickText('main button', 'Wyłącz');
 await until(hasButton('Włącz powiadomienia'));
@@ -675,9 +714,12 @@ await until(`!!document.querySelector('header.bar select')`);
 await go('#/dostep', `!!document.querySelector('.greeting')`);
 await go('#/wiecej', `document.querySelectorAll('.menu a').length > 0`);
 const plainMenu = await text('.menu a');
-check('access: page and menu entry hidden from non-admins', plainMenu.length === 11 && !plainMenu.includes('Dostęp do aplikacji') && (await log()).filter((l) => l === 'GET /api/admin/emails').length === 1, plainMenu);
+check('access: page and menu entry hidden from non-admins', plainMenu.length === 12 && !plainMenu.includes('Dostęp do aplikacji') && (await log()).filter((l) => l === 'GET /api/admin/emails').length === 1, plainMenu);
 
-await go('#/wiecej', `document.querySelectorAll('.menu a').length > 0`);
+// Among the settings, so that a wide screen, which has no "Więcej", reaches it as well.
+await go('#/ustawienia', `[...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'Usuń moje dane')`);
+check('settings: the account, logout and the bug report are here as well', (await mainText()).includes('Zalogowano jako ') && (await js(hasButton('Wyloguj'))) &&
+  (await js(`[...document.querySelectorAll('main a')].some((a) => a.textContent.trim() === 'Zgłoś błąd' && a.target === '_blank' && a.href.includes('/issues/new'))`)));
 await clickText('main button', 'Usuń moje dane');
 await sleep(600);
 check('delete my data: asked first, deleted on the server, back to login', dialog.text.startsWith('Usunąć z serwera') &&
@@ -701,7 +743,7 @@ const bySubject = `Object.fromEntries([...document.querySelectorAll('main sectio
 const pressed = () => js(`document.querySelector('main .segmented [aria-pressed=true]')?.textContent`);
 const second = await js(bySubject);
 check('grades: the second semester shown first once it has grades, with the descriptive grades of the whole year', (await pressed()) === 'II semestr' &&
-  JSON.stringify(second) === JSON.stringify({ Matematyka: 'Matematyka Bieżące ZA B', 'Oceny opisowe': 'Oceny opisowe Opis UC' }), second);
+  JSON.stringify(second) === JSON.stringify({ Matematyka: 'Matematyka Bieżące ZA B 3', 'Oceny opisowe': 'Oceny opisowe Opis UC' }), second);
 const kinds = [];
 const detailOf = async (chip) => {
   await clickText('.chip', chip);
@@ -729,6 +771,91 @@ check('grades: only the 1 to 6 scale is coloured', uncoloured);
 const probes = (await log()).filter((l) => /^GET \/api\/s\/1001u\/(PointGrades|TextGrades|DescriptiveGrades|DescriptiveTextGrades|DescriptiveGrades\/Text)$/.test(l));
 check('grades: a system the school does not use is not asked about on every visit', probes.length === 10, probes);
 await shot('18-grades-systems');
+
+// A school that asks for an average and keeps 1 to 6 grades as descriptive ones: Librus counts none, the switch in
+// "Ustawienia" does.
+const setting = (label) => `[...document.querySelectorAll('main label.check')].find((l) => l.textContent.trim() === ${JSON.stringify(label)})?.querySelector('input')`;
+const forcedBox = setting('Licz średnie z każdej oceny 1–6');
+const asSent = await heads();
+await go('#/ustawienia', `${forcedBox}?.checked === false`);
+await js(`${forcedBox}.click()`);
+// The grades open at the second semester, counted anew: the answer kept from before the switch is not shown.
+const forcedOn = await go('#/oceny', `(${counted}).includes('każdej oceny 1–6')`);
+const forcedSecond = await heads();
+await clickText('main .segmented button', 'I semestr');
+await until(`document.querySelector('main .segmented [aria-pressed=true]')?.textContent === 'I semestr'`);
+const forcedFirst = await heads();
+// I: the 3 alone, the 5 of 20 points left out; (5 x 3 + 4,5 x 2) / 5; a 5 and a 4 at no weight, once each. II: the
+// descriptive 3, once; the year (15 + 9 + 3) / 6.
+check('grades: forced in the settings, the averages are counted from every 1 to 6 grade, a descriptive one once, points left out', forcedOn &&
+  JSON.stringify(asSent) === JSON.stringify({ 'Język polski0': 'śr. I sem. 71,50', Matematyka1: 'śr. I sem. 4,67', Statystyka2: '', Inne3: '', Inne4: '', 'Oceny opisowe5': '' }) &&
+  JSON.stringify(forcedFirst) === JSON.stringify({ 'Język polski0': 'śr. I sem. 3,00', Matematyka1: 'śr. I sem. 4,80', Statystyka2: 'śr. I sem. 4,50', Inne3: 'śr. I sem. 3,50', Inne4: 'śr. I sem. 2,80', 'Oceny opisowe5': '' }) &&
+  JSON.stringify(forcedSecond) === JSON.stringify({ Matematyka0: 'śr. II sem. 3,00, rok 4,50', 'Oceny opisowe1': '' }) &&
+  (await js(`localStorage.getItem('forced-averages')`)) === '1', { forcedOn, asSent, forcedFirst, forcedSecond });
+// A plus worth a quarter, picked in the settings: (5 x 3 + 4,25 x 2) / 5, and the note says what counts.
+const choice = (group, label) => `[...document.querySelectorAll('main [aria-labelledby=${group}] button')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})`;
+await go('#/ustawienia', `${choice('plus', '+0,5')}?.getAttribute('aria-pressed') === 'true'`);
+await js(`${choice('plus', '+0,25')}.click()`);
+const quarter = await go('#/oceny', `(${counted}).includes('plus +0,25, minus −0,25')`);
+await clickText('main .segmented button', 'I semestr');
+await until(`document.querySelector('main .segmented [aria-pressed=true]')?.textContent === 'I semestr'`);
+const quarterHeads = await heads();
+const quarterKept = await js(`localStorage.getItem('plus-worth')`);
+await go('#/ustawienia', `${choice('plus', '+0,25')}?.getAttribute('aria-pressed') === 'true'`);
+await js(`${choice('plus', '+0,5')}.click()`);
+check('settings: a plus counts as picked in the averages the app makes, and the default keeps nothing', quarter && quarterHeads.Matematyka1 === 'śr. I sem. 4,70' &&
+  quarterHeads['Język polski0'] === 'śr. I sem. 3,00' && quarterKept === '0.25' && (await js(`localStorage.getItem('plus-worth')`)) === null &&
+  (await go('#/oceny', `(${counted}).includes('plus +0,5, minus −0,25')`)), { quarter, quarterHeads, quarterKept });
+// The year as the mean of its semesters' averages, picked in the settings: (4,80 + 3,00) / 2, not (15 + 9 + 3) / 6.
+await go('#/ustawienia', `${choice('year', 'Wszystkie oceny roku')}?.getAttribute('aria-pressed') === 'true'`);
+await js(`${choice('year', 'Średnia obu semestrów')}.click()`);
+const halved = await go('#/oceny', `(${counted}).includes('rok jako średnia')`);
+const halvedHeads = await heads();
+await go('#/ustawienia', `${choice('year', 'Średnia obu semestrów')}?.getAttribute('aria-pressed') === 'true'`);
+await js(`${choice('year', 'Wszystkie oceny roku')}.click()`);
+check('settings: the year counts as the mean of both semesters when picked so', halved && halvedHeads.Matematyka0 === 'śr. II sem. 3,00, rok 3,90' &&
+  (await js(`localStorage.getItem('year-average')`)) === null && (await go('#/oceny', `(${counted}).includes('każdej oceny') && !(${counted}).includes('rok jako średnia')`)), { halved, halvedHeads });
+await shot('18-grades-forced');
+await clickText('main .byline a', 'Ustawieniach');
+const kept = await until(`${forcedBox}?.checked === true`);
+await shot('18-settings');
+await js(`${forcedBox}.click()`);
+const unforced = await go('#/oceny', `document.querySelectorAll('main h2').length > 0 && !(${counted})`);
+check('grades: the note leads to the settings, where the switch is still on; off again, the averages are what Librus sends', kept && unforced &&
+  JSON.stringify(await heads()) === JSON.stringify({ Matematyka0: '', 'Oceny opisowe1': '' }) && (await js(`localStorage.getItem('forced-averages')`)) === null, { kept, unforced, heads: await heads() });
+
+// A theme picked against the system's: the stylesheet's dark block applies always or never, the page loaded again
+// starts in it, and the system's theme is followed again once asked.
+const bg = `getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`;
+const scheme = `getComputedStyle(document.documentElement).colorScheme`;
+await go('#/ustawienia', `${choice('theme', 'Systemowy')}?.getAttribute('aria-pressed') === 'true'`);
+const themes = { system: await js(bg) };
+await js(`${choice('theme', 'Ciemny')}.click()`);
+themes.dark = [await js(bg), await js(scheme), await js(`document.querySelector('meta[name=theme-color][content="#0d0e10"]').media`)];
+await js(`(() => { window.stale = true; location.reload(); })()`);
+await until(`!window.stale && ${choice('theme', 'Ciemny')}?.getAttribute('aria-pressed') === 'true'`, 8000);
+themes.loaded = [await js(bg), await js(scheme)];
+await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+await js(`${choice('theme', 'Jasny')}.click()`);
+themes.light = [await js(bg), await js(scheme)];
+await js(`${choice('theme', 'Systemowy')}.click()`);
+themes.followed = [await js(bg), await js(`localStorage.getItem('theme')`)];
+await send('Emulation.setEmulatedMedia', { features: [] });
+themes.back = await js(bg);
+check('settings: a picked theme holds against the system and after a load, then the system is followed again', JSON.stringify(themes) === JSON.stringify({
+  system: '#f2f4f7', dark: ['#0d0e10', 'dark', 'all'], loaded: ['#0d0e10', 'dark'], light: ['#f2f4f7', 'light'], followed: ['#0d0e10', null], back: '#f2f4f7' }), themes);
+
+// The view the plan remembered shows among the settings, where it can go back to following the screen.
+const planWas = await js(`localStorage.getItem('plan-view')`);
+const planLabel = { day: 'Dzień', week: 'Tydzień' }[planWas] ?? 'Automatycznie';
+const planShown = await js(`${choice('plan', planLabel)}.getAttribute('aria-pressed')`);
+await js(`${choice('plan', 'Dzień')}.click()`);
+const planDay = await js(`localStorage.getItem('plan-view')`);
+await js(`${choice('plan', 'Automatycznie')}.click()`);
+const planAuto = await js(`localStorage.getItem('plan-view')`);
+await js(`${choice('plan', planLabel)}.click()`);
+check('settings: the plan view is the one the plan kept, can be picked here, and can follow the screen again', planShown === 'true' && planDay === 'day' && planAuto === null &&
+  (await js(`localStorage.getItem('plan-view')`)) === planWas, { planWas, planShown, planDay, planAuto });
 
 await go('#/zadania', `!!document.querySelector('main [role=alert]')`);
 check('premium: a refused paid module is explained once Librus confirms there is no subscription', (await text('main [role=alert]'))[0]?.includes('Mobilnymi Dodatkami') &&
@@ -939,6 +1066,41 @@ await sleep(1000);
 check('page controlled by SW after reload', await js(`!!navigator.serviceWorker.controller`));
 const apiCached = await js(`caches.open('api-v1').then((c) => c.keys()).then((k) => k.length)`);
 check('api responses cached (bounded)', apiCached > 0 && apiCached <= 120, apiCached);
+
+// Screenshot mode: surnames down to an initial on every view and the e-mail cut, until it is switched off.
+const pagesText = async () => {
+  const out = [];
+  for (const [hash, ready] of [['#/oceny', `document.querySelectorAll('main .chip').length > 0`], ['#/plan', `!!document.querySelector('main .lessons, main .week')`],
+    ['#/wiadomosci', `document.querySelectorAll('.messages li').length > 0`], ['#/nauczyciele', `document.querySelectorAll('main li').length > 0`], ['#/wiecej', `document.querySelectorAll('.menu a').length > 0`]]) {
+    await go(hash, ready);
+    if (hash === '#/oceny') await js(`document.querySelector('main .chip').click()`);
+    await sleep(150);
+    out.push(await js(`document.body.innerText`));
+  }
+  return out.join('\n');
+};
+const surname = /Nowak|Testow|Zieli|rodzic@/g;
+const names = setting('Skróć nazwiska');
+// The switch loads the page again: the new one has no mark and the switch as it was left.
+const shorten = async (on) => {
+  await go('#/ustawienia', `${names}?.checked === ${!on}`);
+  await js(`(() => { window.stale = true; ${names}.click(); })()`);
+  return until(`!window.stale && ${names}?.checked === ${on}`, 8000);
+};
+const whole = await pagesText();
+const shortened = await shorten(true);
+const cut = await pagesText();
+check('screenshot mode: surnames are initials and the e-mail is cut on every view', shortened && new Set(whole.match(surname)).size === 4 && !cut.match(surname) && /Anna N\./.test(cut) && /Jan T\./.test(cut) &&
+  cut.includes('r…@example.com'), { shortened, whole: [...new Set(whole.match(surname))], left: cut.match(surname) });
+await shot('26-short-names');
+check('screenshot mode: switched off, the names are whole again', (await shorten(false)) && new Set((await pagesText()).match(surname)).size === 4);
+
+// The tour once more, asked for in the settings: it opens on Start once the page has loaded again.
+await go('#/ustawienia', `[...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'Pokaż samouczek')`);
+await clickText('main button', 'Pokaż samouczek');
+const toured = await until(`location.hash === '#/start' && document.querySelector('dialog.tour')?.open === true`, 8000);
+await clickText('dialog.tour button', 'Pomiń');
+check('settings: the tour shows again when asked, on Start', toured && (await until(`!document.querySelector('dialog.tour') && localStorage.getItem('tour-seen') === '1'`)));
 
 // A link where every answer takes 10 s: opening the app again shows the last data from the service worker's copies
 // (PATIENCE in sw.js), not a blank page until the network answers twice. What a phone saves going to the background first.

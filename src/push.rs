@@ -28,6 +28,8 @@ pub struct Subscription {
     pub auth: Vec<u8>,
     /// The kinds of message (`watch::GROUPS`) turned off on this device, comma separated.
     pub off: String,
+    /// The hours this device gets nothing, as `watch::quiet_hours` reads them ("22:00-07:00"); empty for none.
+    pub quiet: String,
 }
 
 impl Subscription {
@@ -40,7 +42,7 @@ impl Subscription {
         }
         let p256dh = B64.decode(p256dh.trim_end_matches('=')).ok().filter(|k| k.len() == 65 && k[0] == 4)?;
         let auth = B64.decode(auth.trim_end_matches('=')).ok().filter(|a| a.len() == 16)?;
-        Some(Self { endpoint: endpoint.to_string(), p256dh, auth, off: String::new() })
+        Some(Self { endpoint: endpoint.to_string(), p256dh, auth, off: String::new(), quiet: String::new() })
     }
 }
 
@@ -176,6 +178,7 @@ pub mod tests {
             p256dh: d("BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4"),
             auth: d("BTBZMqHH6r4Tts7J_aSIgg"),
             off: String::new(),
+            quiet: String::new(),
         };
         let sender = PrivateKey::from_private_key(&ECDH_P256, &d("yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw")).unwrap();
         let salt: [u8; 16] = d("DGv6ra1nlYgDCS1FRnbzlw").try_into().unwrap();

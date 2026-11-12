@@ -11,6 +11,8 @@ use crate::push::Subscription;
 
 pub const SESSION_TTL_SECS: i64 = 30 * 24 * 3600;
 const MAX_SESSIONS_PER_USER: i64 = 10;
+/// "22:00-07:00": all a device's quiet hours take.
+const QUIET_MAX_BYTES: usize = 11;
 /// Devices one user can receive notifications on; the oldest subscription goes first.
 const MAX_DEVICES_PER_USER: i64 = 5;
 /// Entries of the activity list kept for one student; older ones go.
@@ -154,9 +156,13 @@ impl Store {
         )
         .map_err(|e| e.to_string())?;
         // Added later: the session's own copy of the tokens, sealed with `session_cipher`, NULL when the session uses
-        // the copy kept for notifications; and what a device turned off (`Subscription::off`), at first the breaks: a
-        // message every lesson is for those who ask for it.
-        for column in ["sessions ADD COLUMN tokens BLOB", "devices ADD COLUMN off TEXT NOT NULL DEFAULT 'przerwy'"] {
+        // the copy kept for notifications; what a device turned off (`Subscription::off`), at first the breaks: a
+        // message every lesson is for those who ask for it; and the hours a device gets nothing (`Subscription::quiet`).
+        for column in [
+            "sessions ADD COLUMN tokens BLOB",
+            "devices ADD COLUMN off TEXT NOT NULL DEFAULT 'przerwy'",
+            "devices ADD COLUMN quiet TEXT NOT NULL DEFAULT ''",
+        ] {
             if let Err(e) = db.execute(&format!("ALTER TABLE {column}"), [])
                 && !e.to_string().contains("duplicate column")
             {
@@ -403,7 +409,8 @@ impl Store {
             "INSERT INTO devices(endpoint, email, p256dh, auth, added) VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(endpoint) DO UPDATE SET
                  email = excluded.email, p256dh = excluded.p256dh, auth = excluded.auth, added = excluded.added,
-                 off = CASE WHEN devices.email = excluded.email THEN devices.off ELSE excluded.off END",
+                 off = CASE WHEN devices.email = excluded.email THEN devices.off ELSE excluded.off END,
+                 quiet = CASE WHEN devices.email = excluded.email THEN devices.quiet ELSE excluded.quiet END",
             params![s.endpoint, email, s.p256dh, s.auth, now()],
         )?;
         db.execute(
@@ -420,6 +427,14 @@ impl Store {
         Ok(n > 0)
     }
 
+    /// Sets the hours `email`'s own device at `endpoint` gets nothing, as `Subscription::quiet`: what the caller has
+    /// checked with `watch::quiet_hours`, or none. Never more than its 11 bytes. False: no such device.
+    pub fn set_quiet(&self, email: &str, endpoint: &str, quiet: &str) -> rusqlite::Result<bool> {
+        let quiet = if quiet.len() <= QUIET_MAX_BYTES { quiet } else { "" };
+        let n = self.conn().execute("UPDATE devices SET quiet = ?3 WHERE endpoint = ?1 AND email = ?2", params![endpoint, email, quiet])?;
+        Ok(n > 0)
+    }
+
     /// `email` limits the removal to the caller's own device; the sender passes None for a dead subscription.
     pub fn remove_device(&self, endpoint: &str, email: Option<&str>) -> rusqlite::Result<()> {
         self.conn().execute(
@@ -431,8 +446,8 @@ impl Store {
 
     pub fn devices(&self, email: &str) -> rusqlite::Result<Vec<Subscription>> {
         self.conn()
-            .prepare("SELECT endpoint, p256dh, auth, off FROM devices WHERE email = ?1")?
-            .query_map([email], |r| Ok(Subscription { endpoint: r.get(0)?, p256dh: r.get(1)?, auth: r.get(2)?, off: r.get(3)? }))?
+            .prepare("SELECT endpoint, p256dh, auth, off, quiet FROM devices WHERE email = ?1")?
+            .query_map([email], |r| Ok(Subscription { endpoint: r.get(0)?, p256dh: r.get(1)?, auth: r.get(2)?, off: r.get(3)?, quiet: r.get(4)? }))?
             .collect()
     }
 
@@ -531,7 +546,7 @@ mod tests {
         let s = Store::open(":memory:", &"ab".repeat(32)).expect("store");
         let t = Tokens { access: "a".into(), refresh: "r".into(), accounts: vec![] };
         let sids: Vec<String> = ["gone@x.pl", "phone@x.pl", "here@x.pl"].iter().map(|e| s.new_session(e, Some(&t)).unwrap()).collect();
-        s.add_device("phone@x.pl", &Subscription { endpoint: "https://push/1".into(), p256dh: vec![4; 65], auth: vec![1; 16], off: String::new() }).unwrap();
+        s.add_device("phone@x.pl", &Subscription { endpoint: "https://push/1".into(), p256dh: vec![4; 65], auth: vec![1; 16], off: String::new(), quiet: String::new() }).unwrap();
         s.share_tokens("phone@x.pl", &sids[1]).unwrap();
         s.conn().execute("UPDATE sessions SET expires = 0 WHERE email != 'here@x.pl'", []).unwrap();
 
@@ -559,7 +574,7 @@ mod tests {
         assert_eq!(s.tokens("a@x.pl", Some(&sid)).unwrap().access, "fresh");
 
         // Notifications on: the copy moves to the server, and a session without its own uses that one.
-        let device = Subscription { endpoint: "https://push/1".into(), p256dh: vec![4; 65], auth: vec![1; 16], off: String::new() };
+        let device = Subscription { endpoint: "https://push/1".into(), p256dh: vec![4; 65], auth: vec![1; 16], off: String::new(), quiet: String::new() };
         s.add_device("a@x.pl", &device).unwrap();
         s.share_tokens("a@x.pl", &sid).unwrap();
         let other = s.new_session("a@x.pl", None).unwrap();
@@ -597,7 +612,7 @@ mod tests {
         for email in ["a@x.pl", "b@x.pl"] {
             s.put_tokens(email, &t).unwrap();
         }
-        let device = |n: i64| Subscription { endpoint: format!("https://push/{n}"), p256dh: vec![4; 65], auth: vec![1; 16], off: String::new() };
+        let device = |n: i64| Subscription { endpoint: format!("https://push/{n}"), p256dh: vec![4; 65], auth: vec![1; 16], off: String::new(), quiet: String::new() };
         for n in 0..=MAX_DEVICES_PER_USER {
             s.add_device("a@x.pl", &device(n)).unwrap();
         }
@@ -613,10 +628,15 @@ mod tests {
         assert_eq!(s.devices("b@x.pl").unwrap()[0].off, "przerwy", "the breaks start off");
         assert!(s.set_off("b@x.pl", &device(1).endpoint, "oceny").unwrap());
         assert!(!s.set_off("a@x.pl", &device(1).endpoint, "oceny").unwrap(), "only the owner says what a device gets");
+        assert_eq!(s.devices("b@x.pl").unwrap()[0].quiet, "", "no quiet hours until some are set");
+        assert!(s.set_quiet("b@x.pl", &device(1).endpoint, "22:00-07:00").unwrap());
+        assert!(!s.set_quiet("a@x.pl", &device(1).endpoint, "").unwrap(), "only the owner says when a device is quiet");
         s.add_device("b@x.pl", &device(1)).unwrap();
         assert_eq!(s.devices("b@x.pl").unwrap()[0].off, "oceny", "a device registered again keeps its choice");
+        assert_eq!(s.devices("b@x.pl").unwrap()[0].quiet, "22:00-07:00", "and its quiet hours");
         s.add_device("a@x.pl", &device(1)).unwrap();
-        assert_eq!(s.devices("a@x.pl").unwrap().iter().find(|d| d.endpoint == device(1).endpoint).unwrap().off, "przerwy", "not its last user's");
+        let moved = s.devices("a@x.pl").unwrap().into_iter().find(|d| d.endpoint == device(1).endpoint).unwrap();
+        assert_eq!((moved.off.as_str(), moved.quiet.as_str()), ("przerwy", ""), "not its last user's");
         s.add_device("b@x.pl", &device(1)).unwrap();
 
         s.set_feed("a@x.pl", "1u", "77", "").unwrap();

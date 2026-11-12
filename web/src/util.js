@@ -43,12 +43,12 @@ export const fmtPercent = (ratio) => percent.format(ratio);
 export const fmtAverage = (v) => hundredths.format(v);
 
 /**
- * A 1 to 6 grade as a number for an average: a plus counted half a grade up, a minus a quarter down (a school may
- * count them otherwise). Null for any other mark ("+", "np", "0").
+ * A 1 to 6 grade as a number for an average: a plus counted half a grade up and a minus a quarter down, unless
+ * `plus` and `minus` say otherwise (PLUS and MINUS below: schools differ). Null for any other mark ("+", "np", "0").
  */
-export const worth = (v) => {
+export const worth = (v, plus = 0.5, minus = 0.25) => {
   const n = parseInt(v, 10);
-  return n >= 1 && n <= 6 ? n + (String(v).endsWith('+') ? 0.5 : String(v).endsWith('-') ? -0.25 : 0) : null;
+  return n >= 1 && n <= 6 ? n + (String(v).endsWith('+') ? plus : String(v).endsWith('-') ? -minus : 0) : null;
 };
 
 const plurals = new Intl.PluralRules('pl-PL');
@@ -70,11 +70,120 @@ export const gradeTone = (v) => {
   return n >= 1 && n <= 6 ? `g${n}` : 'g0';
 };
 
-/** Librus stores missing name parts as the string "null". */
-export function person(u) {
-  const name = [u?.FirstName, u?.LastName].filter((x) => x && x !== 'null').join(' ');
-  return name || 'Nieznany';
+/** A switch of "Ustawienia", kept on this device: on is "1" under its key. Without storage it reads as off. */
+export const stored = (key) => {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Forced averages: the app counts them from every 1 to 6 grade, whatever Librus sends. For a school that asks for an
+ * average and keeps its grades where Librus counts none (descriptive ones, categories left out of the average).
+ * shortcut: one switch for every student on this device; key it by login once a parent has children at schools that
+ * count differently.
+ */
+export const FORCED_KEY = 'forced-averages';
+
+/**
+ * A choice of "Ustawienia", kept on this device: one of the setting's `options`, the first (the default, which keeps
+ * nothing) when nothing or anything else is kept.
+ */
+export const choiceOf = ({ key, options }) => {
+  try {
+    const kept = localStorage.getItem(key);
+    return options.includes(kept) ? kept : options[0];
+  } catch {
+    return options[0];
+  }
+};
+
+/** What a plus adds to a grade and a minus takes off it in an average the app counts (`worth`): schools differ. */
+export const PLUS = { key: 'plus-worth', options: ['0.5', '0.33', '0.25', '0'] };
+export const MINUS = { key: 'minus-worth', options: ['0.25', '0.33', '0.5', '0'] };
+
+/** The year's average the app counts: from every grade of the year, or as the mean of the two semesters' averages. */
+export const YEAR = { key: 'year-average', options: ['all', 'halves'] };
+
+/** Set once the first-run tour was seen or skipped (Tour.svelte); "Ustawienia" drops it to show the tour again. */
+export const TOUR_KEY = 'tour-seen';
+
+/** The plan's view: by the width of the screen until one is picked, in the plan itself or in "Ustawienia". */
+export const PLAN = { key: 'plan-view', options: ['', 'day', 'week'] };
+
+/** The theme: the system's unless one is picked in "Ustawienia". */
+export const THEME = { key: 'theme', options: ['', 'light', 'dark'] };
+
+// What on the page depends on the system's theme, each with the condition it came with and a way to change it.
+let themed;
+
+/**
+ * Puts the theme on the page. The dark tokens are written once, in the `prefers-color-scheme: dark` block of app.css:
+ * a picked theme rewrites that block's condition to always or never, rather than keeping a second copy of the tokens.
+ * The browser bar's colours (index.html) and `color-scheme` (form controls, scrollbars) follow.
+ * shortcut: applied when this script runs, so a theme picked against the system's can flash for a frame while the
+ * page loads; upgrade to a blocking script in index.html if that shows.
+ */
+export function applyTheme(theme = choiceOf(THEME)) {
+  // Nothing picked and nothing to undo: the stylesheet is left as it came.
+  if (!theme && !themed) return;
+  themed ??= [
+    ...[...document.styleSheets]
+      .flatMap((sheet) => {
+        try {
+          return [...sheet.cssRules];
+        } catch {
+          // Another origin's stylesheet cannot be read, and holds none of the app's colours.
+          return [];
+        }
+      })
+      .filter((rule) => rule.media)
+      .map((rule) => [rule.media.mediaText, (when) => (rule.media.mediaText = when)]),
+    ...[...document.querySelectorAll('meta[name=theme-color][media]')].map((meta) => [meta.getAttribute('media'), (when) => meta.setAttribute('media', when)]),
+  ].filter(([was]) => was.includes('prefers-color-scheme'));
+  for (const [was, set] of themed) set(theme ? (was.includes(theme) ? 'all' : 'not all') : was);
+  document.documentElement.style.colorScheme = theme;
 }
+
+/**
+ * Screenshot mode, switched in "Ustawienia": a person is a first name and the initial of the surname
+ * ("Anna N."), an e-mail its first letter and its domain. Read once: the switch loads the page again, so no view
+ * keeps a full name it made before.
+ */
+export const SHORT_KEY = 'short-names';
+export const short = stored(SHORT_KEY);
+
+/**
+ * A name from its two parts; Librus stores a missing part as the string "null". One part alone stays whole in
+ * screenshot mode: it names an office ("Sekretariat"), not a person.
+ */
+export function named(first, last) {
+  const [f, l] = [first, last].map((x) => (x && x !== 'null' ? String(x).trim() : ''));
+  return [f, short && f && l ? `${[...l][0]}.` : l].filter(Boolean).join(' ');
+}
+
+export const person = (u) => named(u?.FirstName, u?.LastName) || 'Nieznany';
+
+/** A name written first name first, as an account's student is: "Zuzanna Kowalczyk" is "Zuzanna K." in screenshot mode. */
+export const alias = (name) => (short ? String(name).replace(/\s+(\S)\S*$/u, ' $1.') : name);
+
+/**
+ * Names as the Synergia website writes them, surname first and comma-separated: "Nowak Anna (nauczyciel)" is
+ * "Anna N. (nauczyciel)" in screenshot mode. One word alone stays.
+ * shortcut: a surname of two words keeps its second; upgrade if the site turns out to write such names.
+ */
+export const surnameFirst = (names) =>
+  short
+    ? String(names)
+        .split(/,\s*/)
+        .map((n) => n.replace(/^(\S)\S*\s+([^(]*?\S)(?=\s*(?:\(|$))/u, '$2 $1.'))
+        .join(', ')
+    : names;
+
+/** An e-mail address: "k…@gmail.com" in screenshot mode. */
+export const mail = (address) => (short ? String(address).replace(/^(.)[^@]*/u, '$1…') : address);
 
 /**
  * Teacher-written HTML becomes plain text: rendering it as markup would run whatever a school account typed.

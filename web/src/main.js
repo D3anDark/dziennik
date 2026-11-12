@@ -3,6 +3,7 @@ import App from './App.svelte';
 import { update, drafts, DEMO } from './api.svelte.js';
 import '@fontsource-variable/geist/wght.css';
 import './app.css';
+import { applyTheme } from './util.js';
 
 // The demo seen on another day of the school year (?dzien=2027-03-16, picked in its banner): the clock moves there,
 // keeping the time of day, so its data and every view agree on what today is.
@@ -26,6 +27,7 @@ if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
     };
 }
 
+applyTheme();
 mount(App, { target: document.getElementById('app') });
 
 // The demo is a page on a static host, without a server to install from or push through.

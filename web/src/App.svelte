@@ -1,8 +1,8 @@
 <script>
-  import { api, post, session, net, clock, lookup, clearApiCache, inbox, update, drafts, message, DEMO } from './api.svelte.js';
+  import { api, post, session, net, clock, lookup, clearApiCache, inbox, update, drafts, DEMO } from './api.svelte.js';
   import { tick } from 'svelte';
   import { refreshUnread } from './webmail.js';
-  import { initials, fmtUnix } from './util.js';
+  import { initials, fmtUnix, alias, mail } from './util.js';
   import Icon from './Icon.svelte';
   import Login from './Login.svelte';
   import Home from './Home.svelte';
@@ -19,6 +19,7 @@
   import Topics from './Topics.svelte';
   import Access from './Access.svelte';
   import Push from './Push.svelte';
+  import Settings from './Settings.svelte';
   import Activity from './Activity.svelte';
   import Install from './Install.svelte';
   import Privacy from './Privacy.svelte';
@@ -41,6 +42,7 @@
     nauczyciele: { label: 'Klasa i nauczyciele', icon: 'users', view: Teachers },
     // `global` pages are about the signed-in person, not about one student.
     powiadomienia: { label: 'Powiadomienia', icon: 'bell', view: Push, global: true },
+    ustawienia: { label: 'Ustawienia', icon: 'sliders', view: Settings, global: true },
     dostep: { label: 'Dostęp do aplikacji', icon: 'key', view: Access, global: true, admin: true },
     prywatnosc: { label: 'Prywatność', icon: 'eye', view: Privacy, global: true },
   };
@@ -71,8 +73,8 @@
   const View = $derived(PAGES[route.page]?.view);
   // Writing a message is a task of its own: the page keeps the back link and the send bar, not the tabs.
   const writing = $derived(route.page === 'wiadomosci' && /^nowa(\/|$)/.test(route.arg ?? ''));
-  const accounts = $derived(session.me?.accounts ?? []);
-  const name = $derived(accounts.find((a) => a.login === login)?.name ?? accounts[0]?.name ?? session.me?.email ?? '');
+  const accounts = $derived((session.me?.accounts ?? []).map((a) => (a.name ? { ...a, name: alias(a.name) } : a)));
+  const name = $derived(accounts.find((a) => a.login === login)?.name ?? accounts[0]?.name ?? mail(session.me?.email ?? ''));
 
   function readStudent() {
     try {
@@ -204,23 +206,6 @@
     await clearApiCache();
     session.me = null;
   }
-
-  let forgetError = $state('');
-
-  /** RODO art. 17: everything the server keeps about this person goes, on every device. */
-  async function forget() {
-    if (!confirm('Usunąć z serwera wszystko, co o Tobie trzyma, i wylogować Cię na każdym urządzeniu?')) return;
-    forgetError = '';
-    await disablePush().catch(() => {});
-    try {
-      await api('me', { method: 'DELETE' });
-    } catch (e) {
-      forgetError = message(e);
-      return;
-    }
-    await clearApiCache();
-    session.me = null;
-  }
 </script>
 
 {#if session.me === undefined}
@@ -243,11 +228,11 @@
             <span class="grow">{a.name ?? a.login}{#if about[a.login]}<small class="muted">{about[a.login]}</small>{/if}</span>
           </button>
         {:else}
-          <span class="nav-row account">{session.me.email}</span>
+          <span class="nav-row account">{mail(session.me.email)}</span>
         {/each}
       </div>
       <nav aria-label="Sekcje">
-        {#each Object.keys(PAGES).filter(visible) as p (p)}
+        {#each Object.keys(PAGES).filter((p) => visible(p) && p !== 'ustawienia') as p (p)}
           {#if p === 'powiadomienia'}<p class="group">Konto</p>{/if}
           <a class="nav-row" href="#/{p}" aria-current={route.page === p ? 'page' : undefined}>
             <Icon name={PAGES[p].icon} size={18} />
@@ -259,8 +244,9 @@
       <div class="side-foot">
         <Install row />
         <div class="me">
-          <small class="muted grow">{session.me.email}</small>
-          <!-- An icon beside the logout one: a row of its own would make a 1280×800 sidebar scroll. -->
+          <small class="muted grow">{mail(session.me.email)}</small>
+          <!-- Icons beside the logout one: rows of their own would make a 1280×800 sidebar scroll. -->
+          <a class="button icon-btn" href="#/ustawienia" aria-current={route.page === 'ustawienia' ? 'page' : undefined} aria-label="Ustawienia" title="Ustawienia"><Icon name="sliders" size={18} /></a>
           <a class="button icon-btn" href={ISSUES} target="_blank" rel="noopener" aria-label="Zgłoś błąd" title="Zgłoś błąd"><Icon name="flag" size={18} /></a>
           <button class="icon-btn" onclick={logout} aria-label="Wyloguj" title="Wyloguj"><Icon name="logout" size={18} /></button>
         </div>
@@ -337,10 +323,10 @@
           {/each}
           <Install />
           <a class="button wide" href={ISSUES} target="_blank" rel="noopener"><Icon name="flag" size={20} />Zgłoś błąd</a>
-          <p class="center muted">Zalogowano jako {session.me.email}</p>
+          <p class="center muted">Zalogowano jako {mail(session.me.email)}</p>
           <button class="secondary wide" onclick={logout}><Icon name="logout" size={20} />Wyloguj</button>
-          {#if forgetError}<p class="error" role="alert">{forgetError}</p>{/if}
-          <button class="secondary wide" onclick={forget}><Icon name="close" size={20} />Usuń moje dane</button>
+        {:else if route.page === 'ustawienia'}
+          <Settings {logout} issues={ISSUES} />
         {:else if PAGES[route.page].global}
           <View />
         {:else if !accounts.length}

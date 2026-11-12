@@ -347,7 +347,7 @@ async fn feeds(State(app): Shared, headers: HeaderMap) -> Result<Json<Value>, Ap
         .devices(&email)
         .map_err(db_err)?
         .into_iter()
-        .map(|d| json!({ "endpoint": d.endpoint, "off": d.off.split(',').filter(|g| !g.is_empty()).collect::<Vec<_>>() }))
+        .map(|d| json!({ "endpoint": d.endpoint, "off": d.off.split(',').filter(|g| !g.is_empty()).collect::<Vec<_>>(), "quiet": d.quiet }))
         .collect();
     Ok(Json(json!({ "feeds": feeds, "devices": devices })))
 }
@@ -373,6 +373,8 @@ struct DeviceBody {
     keys: DeviceKeys,
     #[serde(default)]
     off: Vec<String>,
+    /// The device's quiet hours, when the caller sets them: `watch::quiet_hours`, or empty for none.
+    quiet: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -407,15 +409,19 @@ async fn add_device(State(app): Shared, headers: HeaderMap, Json(b): Json<Device
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Sets the kinds of message (`watch::GROUPS`) the caller's device does not get.
+/// Sets the kinds of message (`watch::GROUPS`) the caller's device does not get and, when sent, its quiet hours.
 async fn device_off(State(app): Shared, headers: HeaderMap, Json(b): Json<DeviceBody>) -> Result<StatusCode, ApiError> {
     let email = app.user(&headers)?;
-    if b.off.iter().any(|g| !watch::GROUPS.contains(&g.as_str())) {
+    let quiet = b.quiet.as_deref().map(str::trim);
+    if b.off.iter().any(|g| !watch::GROUPS.contains(&g.as_str())) || quiet.is_some_and(|q| !q.is_empty() && watch::quiet_hours(q).is_none()) {
         return Err(ApiError(StatusCode::BAD_REQUEST, "bad_request"));
     }
     let off: Vec<&str> = watch::GROUPS.iter().copied().filter(|g| b.off.iter().any(|o| o == g)).collect();
     if !app.store.set_off(&email, &b.endpoint, &off.join(",")).map_err(db_err)? {
         return Err(ApiError(StatusCode::NOT_FOUND, "bad_device"));
+    }
+    if let Some(q) = quiet {
+        app.store.set_quiet(&email, &b.endpoint, q).map_err(db_err)?;
     }
     Ok(StatusCode::NO_CONTENT)
 }

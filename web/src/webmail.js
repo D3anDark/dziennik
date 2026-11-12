@@ -1,5 +1,5 @@
 import { api, post, inbox, refreshUnread as countByApi } from './api.svelte.js';
-import { plain } from './util.js';
+import { plain, surnameFirst } from './util.js';
 
 /**
  * Messages read from the Synergia website, for accounts the API refuses (no Mobilne Dodatki). The server passes
@@ -55,7 +55,7 @@ export async function folder(login, name) {
       {
         id: `${n}-${id}`,
         title: text(title) || '(bez tematu)',
-        who: text(who),
+        who: surnameFirst(text(who)),
         date: unix(text(date)),
         sent: name === 'out',
         // The site prints unread rows in bold.
@@ -76,8 +76,8 @@ export async function message(login, key) {
   const readers = n === String(FOLDER.out) ? [...(label('Przeczytano')?.closest('table').rows ?? [])].slice(1) : [];
   return {
     title: field('Temat') || '(bez tematu)',
-    from: field('Nadawca'),
-    to: readers.map((tr) => text(tr.cells[0])).filter(Boolean).join(', '),
+    from: surnameFirst(field('Nadawca')),
+    to: readers.map((tr) => surnameFirst(text(tr.cells[0]))).filter(Boolean).join(', '),
     date: unix(field('Wysłano')),
     body: plain(doc.querySelector('.container-message-content')?.innerHTML ?? ''),
     files: [...doc.querySelectorAll('img[onclick*="pobierz_zalacznik"]')].map((img) => ({
@@ -115,7 +115,7 @@ export async function groups(login) {
       const html = await submit(login, 'getRecipients', fields).then((r) => r.html, () => '');
       const boxes = [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('input[name="DoKogo[]"]')];
       listed.set(kind, boxes.map((box) => box.value));
-      return { label, people: boxes.map((box) => ({ Id: `${kind}/${box.value}`, Label: text(box.closest('tr')?.querySelector('label')) })) };
+      return { label, people: boxes.map((box) => ({ Id: `${kind}/${box.value}`, Label: surnameFirst(text(box.closest('tr')?.querySelector('label'))) })) };
     }),
   );
   return sections.filter((s) => s.people.length);

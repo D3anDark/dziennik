@@ -1,7 +1,7 @@
 <script>
   import { resource } from './api.svelte.js';
   import Icon from './Icon.svelte';
-  import { today, mondayOf, shift, fmtDay, parse, room } from './util.js';
+  import { today, mondayOf, shift, fmtDay, parse, room, choiceOf, PLAN } from './util.js';
   import { week as loadWeek, upcomingDay, monthEvents } from './data.js';
   import { swipe } from './swipe.js';
   import Async from './Async.svelte';
@@ -11,22 +11,12 @@
 
   const t = today();
   const thisMonday = mondayOf(t);
-  const VIEW_KEY = 'plan-view';
-
   /** One day or the whole week, remembered on this device. Unset, a phone shows a day and a wide screen the week. */
-  let view = $state(readView() ?? (matchMedia('(min-width: 900px)').matches ? 'week' : 'day'));
-  function readView() {
-    try {
-      const v = localStorage.getItem(VIEW_KEY);
-      return v === 'day' || v === 'week' ? v : undefined;
-    } catch {
-      return undefined;
-    }
-  }
+  let view = $state(choiceOf(PLAN) || (matchMedia('(min-width: 900px)').matches ? 'week' : 'day'));
   function show(v) {
     view = v;
     try {
-      localStorage.setItem(VIEW_KEY, v);
+      localStorage.setItem(PLAN.key, v);
     } catch {
       // private mode: the choice just is not remembered
     }

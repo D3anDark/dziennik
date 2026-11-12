@@ -10,7 +10,7 @@ ME = {"email": "rodzic@example.com", "admin": True, "push": "BAAA" + "A" * 83, "
     {"login": "2002u", "name": "Ala Testowa", "state": "active"}]}
 ACCESS = {"fixed": ["rodzic@example.com"], "emails": [{"email": "ala@example.com", "added": 1762675200, "active": True}]}
 FEEDS = {"feeds": [{"login": "1001u", "checked": 1762675200, "error": ""}, {"login": "2002u", "checked": 1762675200, "error": "relogin"}],
-         "devices": [{"endpoint": "https://fcm.googleapis.com/fcm/send/e2e", "off": ["przerwy"]}]}
+         "devices": [{"endpoint": "https://fcm.googleapis.com/fcm/send/e2e", "off": ["przerwy"], "quiet": ""}]}
 # The second student: no Mobilne Dodatki, and a school that also grades with points, words and descriptions.
 OTHER = {
     "Me": {"Me": {"Account": {"Login": "2002u", "GroupId": 5, "IsPremium": False, "IsPremiumDemo": False}}},
@@ -22,9 +22,16 @@ OTHER = {
     "TextGrades": {"Grades": [{"Id": 1, "Subject": {"Id": 5}, "AddedBy": {"Id": 2}, "Grade": "zaliczono",
                                "Date": "2026-10-21", "AddDate": "2026-10-21 10:00:00", "Semester": 2},
                               {"Id": 2, "Subject": {"Id": "7"}, "AddedBy": {"Id": 2}, "Grade": "zwolniony", "IsSemester": True,
-                               "Date": "2026-10-24", "AddDate": "2026-10-24 10:00:00", "Semester": 1}]},
+                               "Date": "2026-10-24", "AddDate": "2026-10-24 10:00:00", "Semester": 1},
+                              {"Id": 3, "Subject": {"Id": 11}, "Category": {"Id": 4}, "AddedBy": {"Id": 1}, "Grade": "5",
+                               "Date": "2026-10-06", "AddDate": "2026-10-06 10:00:00", "Semester": 1},
+                              {"Id": 4, "Subject": {"Id": 11}, "Category": {"Id": 4}, "AddedBy": {"Id": 1}, "Grade": "4",
+                               "Date": "2026-10-07", "AddDate": "2026-10-07 10:00:00", "Semester": 1}]},
     "DescriptiveGrades": {"Grades": [{"Id": 1, "Subject": {"Id": 5}, "Skill": {"Id": 3}, "AddedBy": {"Id": 1}, "Map": "B",
-                                      "Phrase": "Czyta płynnie", "Date": "2026-10-22", "AddDate": "2026-10-22 10:00:00", "Semester": 2}]},
+                                      "Phrase": "Czyta płynnie", "Date": "2026-10-22", "AddDate": "2026-10-22 10:00:00", "Semester": 2},
+                                     # A 1 to 6 grade kept as a descriptive one: Librus counts no average from it.
+                                     {"Id": 2, "Subject": {"Id": 5}, "Skill": {"Id": 3}, "AddedBy": {"Id": 1}, "Map": "3",
+                                      "Date": "2026-10-25", "AddDate": "2026-10-25 10:00:00", "Semester": 2}]},
     "DescriptiveGrades/Skills": {"Skills": [{"Id": 3, "Name": "Czytanie"}]},
     "DescriptiveGrades/Text": {"Grades": [{"Id": 1, "GradeGroupId": 8, "Grade": "Uczeń pracuje wytrwale.", "AddedBy": {"Id": 1},
                                            "AddDate": "2026-10-23 10:00:00"}]},
@@ -74,7 +81,9 @@ S = {
     "Grades/Categories": {"Categories": [
         {"Id": 1, "Name": "Sprawdzian", "Weight": 3, "CountToTheAverage": True},
         {"Id": "2", "Name": "Kartkówka", "Weight": 2, "CountToTheAverage": True},
-        {"Id": 3, "Name": "Ocena śródroczna", "IsSemestral": True}]},
+        {"Id": 3, "Name": "Ocena śródroczna", "IsSemestral": True},
+        # Counted, at no weight: how some schools keep a subject out of the average.
+        {"Id": 4, "Name": "Aktywność", "Weight": 0, "CountToTheAverage": True}]},
     "Classrooms/12,7,13": {"Classrooms": [{"Id": "12", "Symbol": "104"}, {"Id": 13, "Symbol": "sala gim."}]},
     "Classrooms/12,13": {"Classrooms": [{"Id": "12", "Symbol": "104"}, {"Id": 13, "Symbol": "sala gim."}]},
     "Attendances": {"Attendances": [
@@ -377,8 +386,13 @@ class H(SimpleHTTPRequestHandler):
     def do_PUT(self):
         p = urlsplit(self.path).path
         n = int(self.headers.get("content-length") or 0)
-        STATE["log"].append("PUT " + p + " " + self.rfile.read(n).decode())
+        raw = self.rfile.read(n).decode()
+        STATE["log"].append("PUT " + p + " " + raw)
         if p == "/api/push" and STATE["logged"]:
+            # The device keeps its quiet hours, as the server does.
+            quiet = json.loads(raw or "{}").get("quiet")
+            if quiet is not None:
+                FEEDS["devices"][0]["quiet"] = quiet
             self.send_response(204); self.end_headers(); return
         self.send(401, {"error": "unauthorized"})
     def do_DELETE(self):

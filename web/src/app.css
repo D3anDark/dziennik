@@ -337,6 +337,12 @@ button:disabled {
   color: var(--muted);
 }
 
+/* The page it leads to is open. */
+.icon-btn[aria-current='page'] {
+  background: var(--raised);
+  color: var(--text);
+}
+
 .icon-btn.busy .icon {
   animation: turn 900ms linear infinite;
 }
@@ -1194,6 +1200,11 @@ section.card.today > h2 {
   flex: 1;
 }
 
+/* A switch in a toolbar that is on: the grades' simulator. */
+.toolbar > [aria-pressed='true'] {
+  background: var(--raised);
+}
+
 /* Narrower than 360px the folders and "Napisz" overrun the screen: the button keeps its pencil, a screen reader its word. */
 @media (max-width: 359px) {
   .toolbar .button {
@@ -1913,6 +1924,30 @@ section.card.today > h2 {
   min-height: 28px;
 }
 
+/* A grade tried out in the simulator: not one the school gave. */
+.chip.tried {
+  border: 1px dashed currentColor;
+}
+
+/* The simulator's form: a grade, its weight and the button, on the line of the chips. */
+.try {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.try select {
+  width: auto;
+  min-height: 36px;
+  padding: 0 var(--space-1);
+}
+
+.try button {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+
 /* The open grade: a bar under it, as under a tab, toward its detail. An outline would read as a final grade. */
 .chip[aria-expanded='true']::before {
   content: '';
@@ -2620,7 +2655,8 @@ details.done summary > strong {
 }
 
 /* Who and when, under a title: one size everywhere. */
-.byline {
+.byline,
+.overall {
   margin: 0 0 var(--space-2);
   color: var(--muted);
   font-size: 0.875rem;
@@ -2697,7 +2733,8 @@ article.note > .rich {
 }
 
 /* A button in a card is as wide as its words. On a phone a form's own submit spans it, as the send bar and the login's do. */
-.compose > button {
+.compose > button,
+.compose > .button {
   justify-self: start;
 }
 
@@ -2825,6 +2862,14 @@ article.note > .rich {
   border-top: 1px solid var(--rule);
   font-weight: 400;
   cursor: pointer;
+}
+
+/* The quiet hours: from and to, side by side under their switch. */
+.hours {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .check input {

@@ -15,7 +15,7 @@
   </p>
   <p>
     <strong>Co serwer zapisuje:</strong> Twój adres e-mail i&nbsp;tokeny dostępu do konta LIBRUS. Hasła nie zapisuje. Gdy
-    włączysz powiadomienia, także adres usługi powiadomień Twojej przeglądarki, wybrane na nim rodzaje powiadomień oraz
+    włączysz powiadomienia, także adres usługi powiadomień Twojej przeglądarki, wybrane na nim rodzaje powiadomień i&nbsp;godziny ciszy oraz
     historię zmian: rodzaj i&nbsp;numer wpisu, bez jego treści. Dla powiadomień o&nbsp;przerwach serwer trzyma
     w&nbsp;pamięci, bez zapisu, dzisiejsze lekcje ucznia: godziny, przedmioty i&nbsp;sale.
   </p>
@@ -51,7 +51,7 @@
   </p>
   <p>
     <strong>Twoje prawa:</strong> dostęp do danych, ich sprostowanie, usunięcie, ograniczenie przetwarzania, przeniesienie
-    i&nbsp;sprzeciw. Usunięcie: przycisk „Usuń moje dane” w&nbsp;zakładce Więcej; o&nbsp;resztę poproś administratora.
+    i&nbsp;sprzeciw. Usunięcie: przycisk „Usuń moje dane” w&nbsp;Ustawieniach; o&nbsp;resztę poproś administratora.
     Możesz złożyć skargę do Prezesa UODO (uodo.gov.pl). Podanie danych jest dobrowolne, ale bez nich aplikacja nie
     działa. Nikt nie podejmuje na ich podstawie zautomatyzowanych decyzji.
   </p>

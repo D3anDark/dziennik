@@ -1,6 +1,6 @@
 <script>
   import { api, post, resource, message } from './api.svelte.js';
-  import { fmtUnix } from './util.js';
+  import { fmtUnix, mail } from './util.js';
   import Async from './Async.svelte';
   import Icon from './Icon.svelte';
 
@@ -62,7 +62,7 @@
           {#each d.emails as a (a.email)}
             <li>
               <span class="grow">
-                {a.email}
+                {mail(a.email)}
                 <small class="muted">{a.active ? 'zalogowany' : 'niezalogowany'} · dodany {fmtUnix(a.added)}</small>
                 <!-- Why the last sign-in failed, as the person saw it; gone once one works. -->
                 {#if a.failed}<small class="error">Nieudane logowanie {fmtUnix(a.failed.at)}: {message({ message: a.failed.reason, cause: a.failed.said })}</small>{/if}
@@ -79,7 +79,7 @@
       <h2>Z konfiguracji serwera</h2>
       <ul class="entries access">
         {#each d.fixed as a (a)}
-          <li><span class="grow">{a}</span></li>
+          <li><span class="grow">{mail(a)}</span></li>
         {/each}
       </ul>
       <p class="muted">Zmienne <code translate="no">ADMIN_EMAILS</code> i <code translate="no">ALLOWED_EMAILS</code>. Zmiana wymaga restartu serwera.</p>

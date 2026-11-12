@@ -1,6 +1,6 @@
 <script>
   import { api, session, message, resource, DEMO } from './api.svelte.js';
-  import { fmtUnix, ago } from './util.js';
+  import { fmtUnix, ago, alias } from './util.js';
   import { supported, current, enable, disable } from './push.js';
   import Icon from './Icon.svelte';
 
@@ -42,20 +42,42 @@
   let chosen = $state(null);
   const off = $derived(chosen ?? feeds.data?.devices?.find((d) => d.endpoint === endpoint)?.off ?? []);
 
-  /** One change at a time (`busy`), so the server keeps the last one. */
-  async function choose(kind, wanted) {
-    const before = chosen;
-    chosen = wanted ? off.filter((k) => k !== kind) : [...off, kind];
+  /**
+   * The hours this device gets nothing, "22:00-07:00" in Polish time ('' for none): its last choice here, else what
+   * the server keeps.
+   */
+  let hushed = $state(null);
+  const quiet = $derived(hushed ?? feeds.data?.devices?.find((d) => d.endpoint === endpoint)?.quiet ?? '');
+  const hours = $derived(quiet ? quiet.split('-') : ['22:00', '07:00']);
+
+  /** One change at a time (`busy`), so the server keeps the last one; `undo` takes a refused one back. */
+  async function save(settings, undo) {
     busy = true;
     error = '';
     try {
-      await api('push', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ endpoint, off: chosen }) });
+      await api('push', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ endpoint, ...settings }) });
     } catch (e) {
-      chosen = before;
+      undo();
       error = message(e);
     } finally {
       busy = false;
     }
+  }
+
+  function choose(kind, wanted) {
+    const before = chosen;
+    chosen = wanted ? off.filter((k) => k !== kind) : [...off, kind];
+    return save({ off: chosen }, () => (chosen = before));
+  }
+
+  /** The request sets what is off as well, so it carries that along. A field emptied half-way is not a choice yet. */
+  function hush(from, to) {
+    if (from === undefined) from = to = '';
+    else if (!from || !to) return;
+    else if (from === to) return void (error = 'Cisza nie może zaczynać się i\u00a0kończyć o\u00a0tej samej godzinie.');
+    const before = hushed;
+    hushed = from && `${from}-${to}`;
+    return save({ off, quiet: hushed }, () => (hushed = before));
   }
 
   const students = $derived(
@@ -116,6 +138,23 @@
       </label>
     {/each}
   </section>
+  <section class="card">
+    <h2>Cisza nocna</h2>
+    <label class="check">
+      <input type="checkbox" disabled={busy} checked={Boolean(quiet)} onchange={(e) => (e.currentTarget.checked ? hush(...hours) : hush())} />
+      Nie wysyłaj w&nbsp;wybranych godzinach
+    </label>
+    {#if quiet}
+      <div class="hours">
+        <label>Od<input type="time" required disabled={busy} value={hours[0]} onchange={(e) => hush(e.currentTarget.value, hours[1])} /></label>
+        <label>Do<input type="time" required disabled={busy} value={hours[1]} onchange={(e) => hush(hours[0], e.currentTarget.value)} /></label>
+      </div>
+    {/if}
+    <p class="muted">
+      W&nbsp;tych godzinach serwer nic nie wysyła na to urządzenie. Tego, co wtedy przyszło, nie wyśle później: zobaczysz
+      to w&nbsp;Aktywności. Godziny są w&nbsp;czasie polskim.
+    </p>
+  </section>
 {/if}
 
 {#if on && students.length}
@@ -125,7 +164,7 @@
       {#each students as s (s.login)}
         <li>
           <span class="grow">
-            {s.name ?? s.login}
+            {s.name ? alias(s.name) : s.login}
             <small class={s.feed?.error ? 'error' : 'muted'}>
               {#if !s.feed}
                 Czeka na pierwsze sprawdzenie.
