@@ -4,7 +4,7 @@ Nieoficjalna aplikacja do dziennika LIBRUS Synergia dla małej, zamkniętej grup
 na telefonie (PWA). Własny serwer (Rust) loguje się do Librusa w imieniu użytkownika i pośredniczy w zapytaniach.
 Hasła nie zapisuje, tokeny trzyma zaszyfrowane.
 
-- Demo z przykładowymi danymi, bez logowania: <https://d3andark.github.io/dziennik/>
+- Demo z przykładowymi danymi, bez logowania: <https://unisic.github.io/dziennik/>
 - Projekt niezwiązany z firmą Librus: zobacz [Zastrzeżenia](#zastrzeżenia). Po co powstał: [MANIFEST.md](MANIFEST.md).
 - Pełny opis, widok po widoku: [docs/szczegoly.md](docs/szczegoly.md).
 
