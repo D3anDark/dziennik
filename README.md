@@ -18,8 +18,8 @@ Hasła nie zapisuje, tokeny trzyma zaszyfrowane.
   dostanę 5".
 - **Wiadomości:** czytanie, pisanie i odpowiadanie, załączniki do pobrania, "Oznacz jako przeczytane" z potwierdzeniem.
   Konta bez Mobilnych Dodatków czytają i piszą przez stronę Synergii.
-- **Powiadomienia** (Web Push): zmiany w dzienniku co 10 minut, szczęśliwy numerek, przerwy. Rodzaje i cisza nocna
-  osobno dla każdego urządzenia.
+- **Powiadomienia** (Web Push): zmiany w dzienniku co 10 minut ze szczegółami (ocena i przedmiot, nieobecność i lekcja,
+  nadawca i temat wiadomości), szczęśliwy numerek, przerwy. Rodzaje i cisza nocna osobno dla każdego urządzenia.
 - **Ustawienia** na urządzeniu: język (polski, angielski, ukraiński), motyw, widok planu, kolory frekwencji, sposób liczenia średnich, skracanie nazwisk do
   zrzutów ekranu.
 - **Na co dzień:** kilku uczniów na jednym koncie, tryb offline z ostatnimi danymi, instalacja na ekranie telefonu.

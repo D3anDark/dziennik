@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use tokio::time::MissedTickBehavior;
 
 use crate::push::{self, Sent, Subscription};
-use crate::{App, breaks};
+use crate::{App, breaks, librus};
 
 // shortcut: one fixed interval for everyone, upgrade to a per-user setting if someone asks for a different pace.
 const EVERY: Duration = Duration::from_secs(10 * 60);
@@ -18,8 +18,13 @@ const EVERY: Duration = Duration::from_secs(10 * 60);
 const APP_VERSION: &str = "8.4.3";
 /// The app acknowledges changes 30 at a time.
 const ACK_CHUNK: usize = 30;
-/// Longest list of attendance ids looked up in one request.
+/// Longest list of ids looked up in one request, and most entries of one kind described in one round.
 const MAX_LOOKUP: usize = 100;
+/// Entries described line by line in one message; the rest are counted. With `MAX_LINE` this keeps a message far
+/// below the push payload limit (`push::MAX_PAYLOAD`).
+const MAX_LINES: usize = 5;
+/// Characters of one line, the cut included.
+const MAX_LINE: usize = 100;
 const MAX_BODY: usize = 1024 * 1024;
 /// Standard attendance type "present". School-defined types point at a standard one through StandardType.
 const PRESENT: &str = "100";
@@ -121,16 +126,27 @@ fn changes(body: &Value) -> Vec<Change> {
         .collect()
 }
 
-/// "Nowe: oceny (2), frekwencja. Zmienione: oceny." and the page of the first entry, leaving out the pages in `off`.
-/// None when nothing is news.
-fn summary(changes: &[Change], absences: &HashSet<String>, off: &str) -> Option<(String, &'static str)> {
+/// A line of `details` for each entry that has one ("Nowa ocena: 5 · Matematyka"), at most `MAX_LINES`, then
+/// "Nowe: oceny (2), frekwencja. Zmienione: oceny." for the rest, and the page of the first entry, leaving out the
+/// pages in `off`. None when nothing is news.
+fn summary(changes: &[Change], absences: &HashSet<String>, details: &HashMap<String, String>, off: &str) -> Option<(String, &'static str)> {
     let mut page = None;
+    let mut lines: Vec<&str> = Vec::new();
+    // By entry, not by text: two equal grades of one day are two lines; an entry added and changed at once is one.
+    let mut described = HashSet::new();
     let mut sentences = Vec::new();
     for (how, lead) in [("Add", "Nowe"), ("Edit", "Zmienione"), ("Delete", "Usunięte")] {
         let mut counts: Vec<(&str, usize)> = Vec::new();
         for c in changes.iter().filter(|c| c.how == how && c.news(absences)) {
             let Some(&(_, label, to)) = KINDS.iter().find(|k| k.0 == c.kind && wants(off, k.2)) else { continue };
             page.get_or_insert(to);
+            let key = c.resource.as_ref().map(|r| format!("{}/{r}", c.kind));
+            if let Some((key, line)) = key.and_then(|k| details.get(&k).map(|l| (k, l))) {
+                if described.insert(key) {
+                    lines.push(line);
+                }
+                continue;
+            }
             match counts.iter_mut().find(|x| x.0 == label) {
                 Some(x) => x.1 += 1,
                 None => counts.push((label, 1)),
@@ -141,7 +157,14 @@ fn summary(changes: &[Change], absences: &HashSet<String>, off: &str) -> Option<
             sentences.push(format!("{lead}: {}.", parts.join(", ")));
         }
     }
-    Some((sentences.join(" "), page?))
+    let mut out: Vec<String> = lines.iter().take(MAX_LINES).map(|l| l.to_string()).collect();
+    if lines.len() > MAX_LINES {
+        out.push(format!("…i jeszcze {}.", lines.len() - MAX_LINES));
+    }
+    if !sentences.is_empty() {
+        out.push(sentences.join(" "));
+    }
+    Some((out.join("\n"), page?))
 }
 
 /// One Synergia call for one student. Errors are the short codes the frontend already translates.
@@ -168,9 +191,9 @@ pub async fn get(app: &App, email: &str, login: &str, path: &str) -> Result<Valu
     json_body(call(app, email, login, |t| app.http.get(&url).bearer_auth(t)).await?).await
 }
 
-/// Of the changed attendance entries, the ones that are not plain presence. Empty when Librus does not say:
-/// staying quiet beats a message for every lesson.
-async fn absences(app: &App, email: &str, login: &str, changes: &[Change]) -> HashSet<String> {
+/// Of the changed attendance entries, the ones that are not plain presence, by id, with the name of their type.
+/// Empty when Librus does not say: staying quiet beats a message for every lesson.
+async fn absences(app: &App, email: &str, login: &str, changes: &[Change]) -> HashMap<String, (Value, String)> {
     let ids: Vec<&str> = changes
         .iter()
         .filter(|c| c.kind == "Attendances" && c.how != "Delete")
@@ -178,28 +201,213 @@ async fn absences(app: &App, email: &str, login: &str, changes: &[Change]) -> Ha
         .take(MAX_LOOKUP)
         .collect();
     if ids.is_empty() {
-        return HashSet::new();
+        return HashMap::new();
     }
     let (Ok(types), Ok(entries)) =
         (get(app, email, login, "Attendances/Types").await, get(app, email, login, &format!("Attendances/{}", ids.join(","))).await)
     else {
-        return HashSet::new();
+        return HashMap::new();
     };
-    let standard: HashMap<String, String> = types["Types"]
-        .as_array()
-        .map_or(&[][..], Vec::as_slice)
-        .iter()
-        .filter_map(|t| Some((id(&t["Id"])?, if t["Standard"] == true { id(&t["Id"])? } else { id(&t["StandardType"]["Id"])? })))
+    // By type: the standard type it stands for, and its name.
+    let types: HashMap<String, (String, String)> = items(&types, "Types", "Type")
+        .into_iter()
+        .filter_map(|t| {
+            let standard = if t["Standard"] == true { id(&t["Id"])? } else { id(&t["StandardType"]["Id"])? };
+            Some((id(&t["Id"])?, (standard, text(&t["Name"]).unwrap_or_default())))
+        })
         .collect();
-    // A list of ids answers under either key, like every Synergia list.
-    let one = [entries["Attendance"].clone()];
-    let list = entries["Attendances"].as_array().map_or(&one[..], Vec::as_slice);
-    list.iter()
+    items(&entries, "Attendances", "Attendance")
+        .into_iter()
         .filter_map(|a| {
             let kind = id(&a["Type"]["Id"])?;
-            (standard.get(&kind).unwrap_or(&kind) != PRESENT).then(|| id(&a["Id"])).flatten()
+            let (standard, name) = types.get(&kind).cloned().unwrap_or((kind, String::new()));
+            (standard != PRESENT).then(|| Some((id(&a["Id"])?, (a.clone(), name)))).flatten()
         })
         .collect()
+}
+
+/// The items of a Synergia answer: a list under `many`, or a single one under `one`.
+fn items<'a>(v: &'a Value, many: &str, one: &str) -> Vec<&'a Value> {
+    v[many].as_array().map_or_else(|| v.get(one).into_iter().collect(), |a| a.iter().collect())
+}
+
+/// A text field (or a number) as plain text; None when empty.
+fn text(v: &Value) -> Option<String> {
+    let s = match v {
+        Value::String(s) => librus::plain(s),
+        Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    (!s.is_empty()).then_some(s)
+}
+
+/// Names by id of a dictionary (subjects, categories); a category may call it CategoryName.
+fn names(v: &Value, many: &str) -> HashMap<String, String> {
+    items(v, many, "").into_iter().filter_map(|x| Some((id(&x["Id"])?, text(&x["Name"]).or_else(|| text(&x["CategoryName"]))?))).collect()
+}
+
+/// "14.11" of "2026-11-14 08:00:00", "dziś" for `today`; None for what is not a date.
+fn day(v: &Value, today: &str) -> Option<String> {
+    let s = v.as_str()?.get(..10)?;
+    breaks::parse(s)?;
+    Some(if s == today { "dziś".to_string() } else { format!("{}.{}", &s[8..10], &s[5..7]) })
+}
+
+/// "Nowa ocena: 5 · Matematyka · Sprawdzian" from what Librus said, cut at `MAX_LINE`; None when it said nothing.
+fn line(lead: &str, parts: &[Option<String>]) -> Option<String> {
+    let parts: Vec<&str> = parts.iter().flatten().map(String::as_str).collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let s = format!("{lead}: {}", parts.join(" · "));
+    if s.chars().count() <= MAX_LINE {
+        return Some(s);
+    }
+    Some(format!("{}…", s.chars().take(MAX_LINE - 1).collect::<String>().trim_end()))
+}
+
+/// One line about each new or changed entry, by "kind/id", for the kinds an awake device is told of: the grade with
+/// its subject and category, the kind of absence with the lesson, the remark, the announcement, the calendar entry,
+/// the homework, the sender and subject of a message. Read now and sent, never stored. Whatever does not answer leaves
+/// its entries to the plain summary. A message is found in the list, never opened: opening one marks it read.
+async fn details(
+    app: &App,
+    email: &str,
+    login: &str,
+    changes: &[Change],
+    absent: &HashMap<String, (Value, String)>,
+    awake: &[&Subscription],
+) -> HashMap<String, String> {
+    let ask = |path: String| async move { get(app, email, login, &path).await.unwrap_or_default() };
+    let today = breaks::iso(breaks::local(breaks::unix_now()).0);
+    // The new and changed entries of a kind someone awake is told of, as (id, Add or Edit), in the feed's order.
+    let of = |kind: &str| -> Vec<(&str, &str)> {
+        let group = KINDS.iter().find(|k| k.0 == kind).map_or("", |k| k.2);
+        if !awake.iter().any(|d| wants(&d.off, group)) {
+            return Vec::new();
+        }
+        let mut out: Vec<(&str, &str)> = Vec::new();
+        for c in changes.iter().filter(|c| c.kind == kind && c.how != "Delete") {
+            if let Some(r) = c.resource.as_deref().filter(|r| !out.iter().any(|x| x.0 == *r) && (kind != "Attendances" || absent.contains_key(*r))) {
+                out.push((r, c.how.as_str()));
+            }
+        }
+        out.truncate(MAX_LOOKUP);
+        out
+    };
+    let lead = |how: &str, add: &str, edit: &str| if how == "Add" { add.to_string() } else { edit.to_string() };
+    let mut out = HashMap::new();
+    let mut put = |kind: &str, id: &str, line: Option<String>| {
+        if let Some(l) = line {
+            out.insert(format!("{kind}/{id}"), l);
+        }
+    };
+
+    let systems = [("Grades", "Grades/Categories"), ("PointGrades", "PointGrades/Categories"), ("TextGrades", "Grades/Categories")];
+    let graded: Vec<_> = systems.iter().map(|&(kind, dict)| (kind, dict, of(kind))).filter(|s| !s.2.is_empty()).collect();
+    let (attendance, calendar) = (of("Attendances"), of("HomeWorks"));
+    let subjects =
+        if graded.is_empty() && attendance.is_empty() && calendar.is_empty() { HashMap::new() } else { names(&ask("Subjects".into()).await, "Subjects") };
+    let subject = |v: &Value| id(v).and_then(|s| subjects.get(&s).cloned());
+
+    for (kind, dict, wanted) in graded {
+        let (list, cats) = (ask(kind.into()).await, ask(dict.into()).await);
+        let cats: HashMap<String, &Value> = items(&cats, "Categories", "Category").into_iter().filter_map(|c| Some((id(&c["Id"])?, c))).collect();
+        for g in items(&list, "Grades", "Grade") {
+            let Some((gid, how)) = id(&g["Id"]).and_then(|i| wanted.iter().find(|w| w.0 == i)).copied() else { continue };
+            let cat = id(&g["Category"]["Id"]).and_then(|c| cats.get(&c).copied());
+            let mut value = text(&g["Grade"]);
+            if kind == "PointGrades" {
+                value = value.map(|v| cat.and_then(|c| text(&c["ValueTo"])).map_or_else(|| format!("{v} pkt"), |max| format!("{v}/{max}")));
+            }
+            let category = cat.and_then(|c| text(&c["Name"]).or_else(|| text(&c["CategoryName"])));
+            put(kind, gid, line(&lead(how, "Nowa ocena", "Zmieniona ocena"), &[value, subject(&g["Subject"]["Id"]), category]));
+        }
+    }
+
+    if !attendance.is_empty() {
+        let lessons: HashMap<String, Value> =
+            items(&ask("Lessons".into()).await, "Lessons", "Lesson").into_iter().filter_map(|l| Some((id(&l["Id"])?, l["Subject"]["Id"].clone()))).collect();
+        for (aid, how) in attendance {
+            let (a, name) = &absent[aid];
+            let name = (!name.is_empty()).then(|| name.clone());
+            let lesson = id(&a["Lesson"]["Id"]).and_then(|l| lessons.get(&l)).and_then(subject);
+            let no = text(&a["LessonNo"]).map(|n| format!("lekcja {n}"));
+            let l = match (how, name) {
+                ("Add", Some(name)) => line(&name, &[lesson, no, day(&a["Date"], &today)]),
+                (_, name) => line("Zmiana we frekwencji", &[name, lesson, no, day(&a["Date"], &today)]),
+            };
+            put("Attendances", aid, l);
+        }
+    }
+
+    let notes = of("Notes");
+    if !notes.is_empty() {
+        let (list, cats) = (ask("Notes".into()).await, ask("Notes/Categories".into()).await);
+        let cats = names(&cats, "Categories");
+        for n in items(&list, "Notes", "Note") {
+            let Some((nid, how)) = id(&n["Id"]).and_then(|i| notes.iter().find(|w| w.0 == i)).copied() else { continue };
+            let category = id(&n["Category"]["Id"]).and_then(|c| cats.get(&c).cloned());
+            put("Notes", nid, line(&lead(how, "Nowa uwaga", "Zmieniona uwaga"), &[category, text(&n["Text"])]));
+        }
+    }
+
+    let notices = of("SchoolNotices");
+    if !notices.is_empty() {
+        for n in items(&ask("SchoolNotices".into()).await, "SchoolNotices", "SchoolNotice") {
+            let Some((nid, how)) = id(&n["Id"]).and_then(|i| notices.iter().find(|w| w.0 == i)).copied() else { continue };
+            put("SchoolNotices", nid, line(&lead(how, "Nowe ogłoszenie", "Zmienione ogłoszenie"), &[text(&n["Subject"])]));
+        }
+    }
+
+    if !calendar.is_empty() {
+        let ids: Vec<&str> = calendar.iter().map(|c| c.0).collect();
+        let (list, cats) = (ask(format!("HomeWorks/{}", ids.join(","))).await, ask("HomeWorks/Categories".into()).await);
+        let cats = names(&cats, "Categories");
+        for h in items(&list, "HomeWorks", "HomeWork") {
+            let Some((hid, how)) = id(&h["Id"]).and_then(|i| calendar.iter().find(|w| w.0 == i)).copied() else { continue };
+            let category = id(&h["Category"]["Id"]).and_then(|c| cats.get(&c).cloned());
+            let parts = [category, subject(&h["Subject"]["Id"]), day(&h["Date"], &today), text(&h["Content"])];
+            put("HomeWorks", hid, line(&lead(how, "Nowy termin", "Zmieniony termin"), &parts));
+        }
+    }
+
+    let homework = of("HomeWorkAssignments");
+    if !homework.is_empty() {
+        for h in items(&ask("HomeWorkAssignments".into()).await, "HomeWorkAssignments", "HomeWorkAssignment") {
+            let Some((hid, how)) = id(&h["Id"]).and_then(|i| homework.iter().find(|w| w.0 == i)).copied() else { continue };
+            let due = day(&h["DueDate"], &today).map(|d| format!("na {d}"));
+            put("HomeWorkAssignments", hid, line(&lead(how, "Nowe zadanie domowe", "Zmienione zadanie domowe"), &[text(&h["Topic"]), due]));
+        }
+    }
+
+    // The list after the oldest new id, the way the app's message list reads it; an account without Mobilne Dodatki
+    // is refused and keeps the plain summary.
+    let messages: Vec<&str> = of("Messages").into_iter().filter(|m| m.1 == "Add").map(|m| m.0).collect();
+    if let Some(first) = messages.iter().filter_map(|m| m.parse::<u64>().ok()).min() {
+        let list = ask(format!("Messages?afterId={}&limit=10&getAllTypes=1&page=1", first.saturating_sub(1))).await;
+        let found: Vec<&Value> = items(&list, "Messages", "Message").into_iter().filter(|m| id(&m["Id"]).is_some_and(|i| messages.contains(&i.as_str()))).collect();
+        let mut senders: Vec<String> = Vec::new();
+        for s in found.iter().filter_map(|m| id(&m["Sender"]["Id"])) {
+            if !senders.contains(&s) && senders.len() < 10 {
+                senders.push(s);
+            }
+        }
+        let people = if senders.is_empty() { Value::Null } else { ask(format!("Messages/User/{}", senders.join(","))).await };
+        let people: HashMap<String, String> = items(&people, "Users", "User")
+            .into_iter()
+            .filter_map(|u| {
+                let name = [text(&u["FirstName"]), text(&u["LastName"])].into_iter().flatten().collect::<Vec<_>>().join(" ");
+                Some((id(&u["Id"])?, name)).filter(|p| !p.1.is_empty())
+            })
+            .collect();
+        for m in found {
+            let Some(mid) = id(&m["Id"]) else { continue };
+            let lead = id(&m["Sender"]["Id"]).and_then(|s| people.get(&s)).map_or_else(|| "Nowa wiadomość".to_string(), |p| format!("Nowa wiadomość od {p}"));
+            put("Messages", &mid, line(&lead, &[text(&m["Subject"])]));
+        }
+    }
+    out
 }
 
 /// "Szczęśliwy numerek na jutro: 13", for a number of `today` or later.
@@ -270,7 +478,8 @@ async fn check(app: &App, email: &str, login: &str, name: &str, register: &str, 
     if fresh {
         return Ok((register, false));
     }
-    let absences = absences(app, email, login, &found).await;
+    let absent = absences(app, email, login, &found).await;
+    let absences: HashSet<String> = absent.keys().cloned().collect();
     let news: Vec<(&str, &str, &str)> = found
         .iter()
         .filter(|c| c.news(&absences))
@@ -279,6 +488,10 @@ async fn check(app: &App, email: &str, login: &str, name: &str, register: &str, 
     if let Err(e) = app.store.add_activity(email, login, &news) {
         eprintln!("db: {e}");
     }
+    // Details only for someone to read them: notify() skips a device in its quiet hours.
+    let minute = breaks::local(breaks::unix_now()).1;
+    let awake: Vec<&Subscription> = devices.iter().filter(|d| !quiet_at(&d.quiet, minute)).collect();
+    let details = if awake.is_empty() { HashMap::new() } else { details(app, email, login, &found, &absent, &awake).await };
     // Devices that turned different kinds off get different summaries: one per choice.
     let mut told = HashSet::new();
     for off in devices.iter().map(|d| d.off.as_str()) {
@@ -286,7 +499,7 @@ async fn check(app: &App, email: &str, login: &str, name: &str, register: &str, 
             continue;
         }
         let to: Vec<&Subscription> = devices.iter().filter(|d| d.off == off).collect();
-        if let Some((body, page)) = summary(&found, &absences, off) {
+        if let Some((body, page)) = summary(&found, &absences, &details, off) {
             notify(app, &to, &json!({ "title": name, "body": body, "url": format!("/#/{page}") }), push::TTL).await;
         }
     }
@@ -431,16 +644,49 @@ mod tests {
         ] }));
         assert_eq!(found.len(), 6, "an id that is not a plain token never reaches a URL");
         let absent = HashSet::from(["13".to_string()]);
+        let none = HashMap::new();
         assert_eq!(
-            summary(&found, &absent, ""),
+            summary(&found, &absent, &none, ""),
             Some(("Nowe: oceny, frekwencja. Zmienione: oceny. Usunięte: uwagi.".to_string(), "oceny"))
         );
-        assert_eq!(summary(&found[2..5], &HashSet::new(), ""), None, "presence and lesson topics stay quiet");
+        assert_eq!(summary(&found[2..5], &HashSet::new(), &none, ""), None, "presence and lesson topics stay quiet");
         assert_eq!(
-            summary(&found, &absent, "oceny,przerwy").map(|s| s.0).as_deref(),
+            summary(&found, &absent, &none, "oceny,przerwy").map(|s| s.0).as_deref(),
             Some("Nowe: frekwencja. Usunięte: uwagi."),
             "a device that turned grades off is not told of them"
         );
+        // An entry with details gets its own line; the others keep the summary.
+        let details = HashMap::from([
+            ("Grades/10".to_string(), "Nowa ocena: 5 · Matematyka".to_string()),
+            ("Attendances/13".to_string(), "Nieobecność: Fizyka · lekcja 2 · dziś".to_string()),
+        ]);
+        assert_eq!(
+            summary(&found, &absent, &details, "").map(|s| s.0).as_deref(),
+            Some("Nowa ocena: 5 · Matematyka\nNieobecność: Fizyka · lekcja 2 · dziś\nZmienione: oceny. Usunięte: uwagi.")
+        );
+        assert_eq!(summary(&found, &absent, &details, "oceny").map(|s| s.0).as_deref(), Some("Nieobecność: Fizyka · lekcja 2 · dziś\nUsunięte: uwagi."));
+        let twice = changes(&json!({ "Changes": [change(1, "Grades", 10, "Add"), change(2, "Grades", 10, "Edit"), change(3, "Grades", 11, "Add")] }));
+        let same = HashMap::from([("Grades/10".to_string(), "Nowa ocena: 5".to_string()), ("Grades/11".to_string(), "Nowa ocena: 5".to_string())]);
+        assert_eq!(summary(&twice, &HashSet::new(), &same, "").map(|s| s.0).as_deref(), Some("Nowa ocena: 5\nNowa ocena: 5"), "one line per entry");
+    }
+
+    #[test]
+    fn details_stay_short() {
+        let long = "x".repeat(500);
+        let cut = line("Nowa uwaga", &[Some(long.clone()), None]).unwrap();
+        assert!(cut.chars().count() == MAX_LINE && cut.ends_with('…'), "{cut}");
+        assert_eq!(line("Nowa ocena", &[None, None]), None, "nothing said, nothing to add to the summary");
+        assert_eq!(line("Nowa ocena", &[Some("5".into()), None, Some("Sprawdzian".into())]).as_deref(), Some("Nowa ocena: 5 · Sprawdzian"));
+        assert_eq!(text(&json!("Opis <b>postaci</b>&nbsp;i&amp;tła ")).as_deref(), Some("Opis postaci i&tła"));
+        assert_eq!(day(&json!("2026-11-14 08:00:00"), "2026-11-12").as_deref(), Some("14.11"));
+        assert_eq!(day(&json!("2026-11-12"), "2026-11-12").as_deref(), Some("dziś"));
+        assert_eq!(day(&json!("jutro"), "2026-11-12"), None);
+        // However many entries come at once, the message stays far below the push payload limit.
+        let many = changes(&json!({ "Changes": (0..200).map(|i| change(i, "Notes", i, "Add")).collect::<Vec<_>>() }));
+        let details: HashMap<String, String> = (0..200).map(|i| (format!("Notes/{i}"), line("Nowa uwaga", &[Some("ż".repeat(500))]).unwrap())).collect();
+        let body = summary(&many, &HashSet::new(), &details, "").unwrap().0;
+        assert_eq!(body.lines().count(), MAX_LINES + 1, "{body}");
+        assert!(body.ends_with("…i jeszcze 195.") && body.len() < 1500, "{} bytes", body.len());
     }
 
     /// Stands in for both the Synergia API and a push service.
@@ -480,7 +726,7 @@ mod tests {
             ("DELETE", "/ChangeRegister/77") => json!({}),
             ("GET", "/Attendances/Types") => json!({ "Types": [
                 { "Id": 100, "Standard": true },
-                { "Id": 1, "Standard": true },
+                { "Id": 1, "Standard": true, "Name": "Nieobecność" },
                 { "Id": "2001", "Standard": false, "StandardType": { "Id": 100 } },
             ] }),
             ("GET", "/Timetables") => json!({ "Timetable": { today(): [
@@ -491,8 +737,12 @@ mod tests {
             ("GET", "/LuckyNumbers") => json!({ "LuckyNumber": { "LuckyNumber": 13, "LuckyNumberDay": today() } }),
             ("GET", "/Attendances/12,13") => json!({ "Attendances": [
                 { "Id": 12, "Type": { "Id": 2001 } },
-                { "Id": "13", "Type": { "Id": "1" } },
+                { "Id": "13", "Type": { "Id": "1" }, "Lesson": { "Id": 3 }, "LessonNo": "2", "Date": today() },
             ] }),
+            ("GET", "/Subjects") => json!({ "Subjects": [{ "Id": 5, "Name": "Matematyka" }, { "Id": "6", "Name": "Fizyka" }] }),
+            ("GET", "/Grades") => json!({ "Grades": [{ "Id": 20, "Grade": "5", "Subject": { "Id": "5" }, "Category": { "Id": 1 } }] }),
+            ("GET", "/Grades/Categories") => json!({ "Categories": [{ "Id": 1, "Name": "Sprawdzian" }] }),
+            ("GET", "/Lessons") => json!({ "Lessons": [{ "Id": 3, "Subject": { "Id": 6 } }] }),
             _ => return StatusCode::NOT_FOUND.into_response(),
         };
         axum::Json(answer).into_response()
@@ -572,9 +822,10 @@ mod tests {
             "GET /Attendances/Types",
             "GET /Attendances/12,13",
         ]);
-        assert!(made[4..6].iter().all(|c| c.starts_with("POST /push/")), "{made:?}");
-        assert_eq!(made[6], "GET /LuckyNumbers");
-        assert!(made.len() == 8 && made[7].starts_with("POST /push/phone "), "the device the push service dropped is not tried again: {made:?}");
+        assert_eq!(made[4..8], ["GET /Subjects", "GET /Grades", "GET /Grades/Categories", "GET /Lessons"], "the details of the news");
+        assert!(made[8..10].iter().all(|c| c.starts_with("POST /push/")), "{made:?}");
+        assert_eq!(made[10], "GET /LuckyNumbers");
+        assert!(made.len() == 12 && made[11].starts_with("POST /push/phone "), "the device the push service dropped is not tried again: {made:?}");
         let pushed = std::mem::take(&mut *fx.pushed.lock().unwrap());
         assert_eq!(pushed.len(), 2);
         let message: Value = serde_json::from_slice(&crate::push::tests::decrypt(&receiver, &[7; 16], &pushed[1].1)).unwrap();
@@ -584,7 +835,7 @@ mod tests {
         assert_eq!(headers["ttl"], "86400");
         assert!(headers["authorization"].to_str().unwrap().starts_with("vapid t="));
         let message: Value = serde_json::from_slice(&crate::push::tests::decrypt(&receiver, &[7; 16], body)).unwrap();
-        assert_eq!(message, json!({ "title": "Jan Testowy", "body": "Nowe: oceny, frekwencja.", "url": "/#/oceny" }));
+        assert_eq!(message, json!({ "title": "Jan Testowy", "body": "Nowa ocena: 5 · Matematyka · Sprawdzian\nNieobecność: Fizyka · lekcja 2 · dziś", "url": "/#/oceny" }));
         let kept: Vec<(String, String, String)> = app.store.activity("a@x.pl", "1u").unwrap().into_iter().map(|e| (e.1, e.2, e.3)).collect();
         assert_eq!(kept, [("Attendances".into(), "Add".into(), "13".into()), ("Grades".into(), "Add".into(), "20".into())], "the same news, newest first");
         let left: Vec<String> = app.store.devices("a@x.pl").unwrap().into_iter().map(|d| d.endpoint).collect();
@@ -615,6 +866,7 @@ mod tests {
         round(&app, true).await;
         let made = calls();
         assert!(made.iter().any(|c| c.starts_with("DELETE /PushChanges/")) && !made.iter().any(|c| c.starts_with("POST /push/")), "{made:?}");
+        assert!(!made.iter().any(|c| c.starts_with("GET /Grades")), "no details read for nobody: {made:?}");
         app.store.set_quiet("a@x.pl", &format!("{base}/push/phone"), "").unwrap();
 
         // An address that lost access is not polled, and hears of no breaks.

@@ -64,10 +64,17 @@ wiadomości, posiłki, przedszkola.
 Strona "Powiadomienia" w "Więcej" włącza Web Push na danym urządzeniu (na iPhonie i iPadzie dopiero po dodaniu
 aplikacji do ekranu początkowego). Serwer co 10 minut czyta kanał zmian Librusa bez tokenu push
 (`ChangeRegister` z `sendPush=0`, potem `PushChanges`). Te same zmiany zapisuje jako
-aktywność ucznia (ostatnie 300 wpisów) dla każdego, kto ma włączone urządzenie, i wysyła zbiorcze
-powiadomienie w rodzaju "Nowe: oceny (2). Zmienione: oceny.":
+aktywność ucznia (ostatnie 300 wpisów) dla każdego, kto ma włączone urządzenie, i wysyła jedno powiadomienie na rundę:
 oceny, zachowanie, nieobecności i spóźnienia (bez zwykłych obecności), uwagi, wiadomości, ogłoszenia, zadania domowe,
-terminarz, zmiany w planie. Pomija tematy lekcji. Szczęśliwy numerek idzie osobno ("Szczęśliwy numerek na jutro: 13"),
+terminarz, zmiany w planie. Pomija tematy lekcji. Nowy albo zmieniony wpis dostaje własną linię ze szczegółami
+(`watch::details`): "Nowa ocena: 5 · Matematyka · Sprawdzian", "Nieobecność: Fizyka · lekcja 2 · dziś", uwaga z
+kategorią i treścią, temat ogłoszenia, termin z kategorią, przedmiotem i datą, zadanie domowe z terminem, "Nowa
+wiadomość od Anna Nowak: temat". Najwyżej 5 linii po 100 znaków, resztę liczy ("…i jeszcze 3."); usunięte wpisy,
+zachowanie, plan i to, czego Librus nie podał, zostają w zbiorczym zdaniu "Nowe: zachowanie. Usunięte: oceny.".
+Szczegóły serwer czyta tylko wtedy, gdy ktoś poza ciszą nocną je dostanie (`Subjects`, listy ocen z kategoriami,
+`Lessons`, `Notes`, `SchoolNotices`, `HomeWorks/{id}`, `HomeWorkAssignments`), i nigdzie ich nie zapisuje. Wiadomość
+szuka na liście (`Messages?afterId=`), bez otwierania, bo otwarcie przez API oznacza ją jako przeczytaną; konto bez
+Mobilnych Dodatków dostaje zbiorcze zdanie. Szczęśliwy numerek idzie osobno ("Szczęśliwy numerek na jutro: 13"),
 gdy kanał zgłosi jego zmianę. Jedno zapytanie na ucznia na rundę, po kolei, dla osób z włączonym urządzeniem.
 
 Przerwy (`src/breaks.rs`, na nowym urządzeniu wyłączone, włącza się je na stronie powiadomień): na koniec każdej lekcji

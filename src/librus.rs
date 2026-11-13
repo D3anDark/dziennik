@@ -130,8 +130,13 @@ pub fn code_from_redirect(location: &str) -> Option<String> {
 /// It is shown to the person and to the admin as text, never as markup.
 fn alert(html: &str) -> String {
     let inner = ALERT_RE.captures(html).and_then(|c| c.get(1)).map_or("", |m| m.as_str());
-    let text = unescape(&TAG_RE.replace_all(inner, " "));
-    text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(300).collect()
+    plain(inner).chars().take(300).collect()
+}
+
+/// Markup from Librus as plain text on one line.
+pub fn plain(html: &str) -> String {
+    let text = unescape(&TAG_RE.replace_all(html, " ").replace("&nbsp;", " "));
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub fn classify_page(html: &str) -> Error {

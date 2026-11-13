@@ -1096,10 +1096,10 @@ const { sessionId } = await send('Target.attachToTarget', { targetId: worker.tar
 const inWorker = async (expression) => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)).result.value;
 await inWorker(`self.registration.showNotification = async (title, options) => { self.__shown = [title, options.body, options.data.url]; }`);
 await until('true', 300);
-await send('ServiceWorker.deliverPushMessage', { origin: base, registrationId: swRegistration, data: JSON.stringify({ title: 'Jan Testowy', body: 'Nowe: oceny', url: '/#/frekwencja' }) });
+await send('ServiceWorker.deliverPushMessage', { origin: base, registrationId: swRegistration, data: JSON.stringify({ title: 'Jan Testowy', body: 'Nowa ocena: 5 · Matematyka\nNowe: oceny', url: '/#/frekwencja' }) });
 let shown;
 for (const end = Date.now() + 3000; Date.now() < end && !shown; await sleep(50)) shown = await inWorker('self.__shown');
-check('push: the service worker turns a delivered message into a notification', JSON.stringify(shown) === JSON.stringify(['Jan Testowy', 'Nowe: oceny', '/#/frekwencja']), shown ?? null);
+check('push: the service worker turns a delivered message into a notification', JSON.stringify(shown) === JSON.stringify(['Jan Testowy', 'Nowa ocena: 5 · Matematyka\nNowe: oceny', '/#/frekwencja']), shown ?? null);
 await send('Target.detachFromTarget', { sessionId });
 await js(`navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { url: location.origin + '/#/frekwencja' } }))`);
 check('push: a tapped notification opens its view', await until(`document.querySelector('h1.title')?.textContent === 'Frekwencja'`));
