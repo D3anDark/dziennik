@@ -15,7 +15,11 @@ Wersja demo: <https://unisic.github.io/dziennik/>. To ten sam frontend z przykł
 (trzecie chodzi do szkoły z ocenami punktowymi, procentowymi, literowymi, słownymi i opisowymi, bez średnich z Librusa
 i z własnym rodzajem frekwencji), bez logowania i bez serwera: `web/src/demo.js` odpowiada na zapytania aplikacji w
 przeglądarce, daty idą za zegarem urządzenia albo za dniem wybranym w banerze demo (styczeń, marzec, czerwiec, lipiec:
-oceny i średnie wokół końca semestru i roku). Build: `cd web && npm run demo` (katalog `web/dist-demo`, ścieżki
+oceny i średnie wokół końca semestru i roku; przerwa świąteczna, ferie zimowe, przerwa wielkanocna). Dni wolne roku
+szkolnego liczy `holidays` w `web/src/util.js`: przerwy według przepisów (23-31 grudnia, od czwartku przed Wielkanocą do
+wtorku po niej, wakacje od dnia po pierwszym piątku po 20 czerwca), ferie umownie w pierwszych dwóch tygodniach lutego
+(naprawdę zależą od województwa) i święta państwowe w dni nauki. W te dni demo nie ma lekcji, ocen ani frekwencji, a
+terminarz pokazuje je jako dni wolne szkoły. Build: `cd web && npm run demo` (katalog `web/dist-demo`, ścieżki
 względne, bez service workera i powiadomień); `.github/workflows/demo.yml` publikuje go na GitHub Pages przy każdym
 pushu na `main`.
 

@@ -20,7 +20,45 @@ export const mondayOf = (s) => shift(s, -((parse(s).getDay() + 6) % 7));
 
 export const fmtDay = (s) => parse(s).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' });
 /** The school year a date belongs to, September to August, by the year it starts in. */
-const schoolYear = (d) => d.getFullYear() - (d.getMonth() < 8);
+export const schoolYear = (d) => d.getFullYear() - (d.getMonth() < 8);
+
+/** Easter Sunday of a year, by the anonymous Gregorian algorithm. */
+function easter(y) {
+  const [a, b, c] = [y % 19, Math.floor(y / 100), y % 100];
+  const [d, e, f] = [Math.floor(b / 4), b % 4, Math.floor((b + 8) / 25)];
+  const h = (19 * a + b - d - Math.floor((b - f + 1) / 3) + 15) % 30;
+  const l = (32 + 2 * e + 2 * Math.floor(c / 4) - h - (c % 4)) % 7;
+  const n = h + l - 7 * Math.floor((a + 11 * h + 22 * l) / 451) + 114;
+  return iso(new Date(y, Math.floor(n / 31) - 1, (n % 31) + 1));
+}
+
+/**
+ * The days off of the school year starting in September of `y`, by the rules for Polish schools: the breaks first
+ * (Christmas from 23 to 31 December, winter holidays, Easter from the Thursday before to the Tuesday after, the summer
+ * from the day after the first Friday past 20 June), then the public holidays that can fall on a school day.
+ */
+export function holidays(y) {
+  // shortcut: winter holidays are the first two weeks of February; the real ones move by region and year.
+  const winter = mondayOf(`${y + 1}-02-07`);
+  const sunday = easter(y + 1);
+  const june = `${y + 1}-06-21`;
+  const lastDay = shift(june, (12 - parse(june).getDay()) % 7);
+  return [
+    { from: `${y}-12-23`, to: `${y}-12-31`, name: 'Zimowa przerwa świąteczna' },
+    { from: winter, to: shift(winter, 13), name: 'Ferie zimowe' },
+    { from: shift(sunday, -3), to: shift(sunday, 2), name: 'Wiosenna przerwa świąteczna' },
+    { from: shift(lastDay, 1), to: `${y + 1}-08-31`, name: 'Ferie letnie' },
+    ...[
+      [`${y}-11-01`, 'Wszystkich Świętych'],
+      [`${y}-11-11`, 'Narodowe Święto Niepodległości'],
+      [`${y + 1}-01-01`, 'Nowy Rok'],
+      [`${y + 1}-01-06`, 'Trzech Króli'],
+      [`${y + 1}-05-01`, 'Święto Pracy'],
+      [`${y + 1}-05-03`, 'Święto Konstytucji 3 Maja'],
+      [shift(sunday, 60), 'Boże Ciało'],
+    ].map(([day, name]) => ({ from: day, to: day, name })),
+  ];
+}
 /** "14 paź"; the year only for a date outside the current school year. */
 export function fmtDate(s) {
   if (!s) return '';

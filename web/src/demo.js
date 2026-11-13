@@ -3,7 +3,7 @@
  * so the app can be tried on a static host (GitHub Pages) without a server or a Librus account. Dates follow the
  * device clock and one day always gives the same data; what the visitor changes (read, done, sent) lasts until reload.
  */
-import { today, shift, parse, worth } from './util.js';
+import { today, shift, parse, worth, holidays, schoolYear } from './util.js';
 
 const T = today();
 const NOW = Math.floor(Date.now() / 1000);
@@ -20,11 +20,12 @@ function random(seed) {
 }
 
 const weekday = (s) => parse(s).getDay();
-const summer = (s) => [7, 8].includes(parse(s).getMonth() + 1);
-// shortcut: school days are weekdays (past ones skip July and August), no other breaks; a visit in summer sees lessons.
+/** The break of the school year a day falls in, if any. */
+const free = (s) => holidays(schoolYear(parse(s))).find((h) => h.from <= s && s <= h.to);
+// School days: weekdays outside the days off of `holidays`.
 function schoolDays(from, n, step) {
   const out = [];
-  for (let d = shift(from, step); out.length < n; d = shift(d, step)) if (weekday(d) % 6 && (step > 0 || !summer(d))) out.push(d);
+  for (let d = shift(from, step); out.length < n; d = shift(d, step)) if (weekday(d) % 6 && !free(d)) out.push(d);
   return step < 0 ? out.reverse() : out;
 }
 const ahead = (n) => schoolDays(T, n, 1)[n - 1];
@@ -137,7 +138,7 @@ function average(list) {
 function build(login) {
   const s = STUDENTS[login];
   const rnd = random(login + T);
-  const on = (date) => s.week[weekday(date) - 1] ?? [];
+  const on = (date) => (free(date) ? [] : (s.week[weekday(date) - 1] ?? []));
   const lessonOf = (subject) => s.base + subject;
   const subjects = Object.keys(s.teachers).map(Number);
   // The school days of this school year so far (`all`; a year has about 190), the last 80 of them (`past`); in its
@@ -179,13 +180,14 @@ function build(login) {
     category === 6 ? (rnd() < 0.85 ? '+' : '-') : mark(rnd, kindOf(subject) === 'pe' || kindOf(subject) === 'arts' ? s.skill + 0.8 : s.skill);
   for (const subject of subjects.filter((x) => x !== 14)) {
     const perWeek = s.week.flat().filter((x) => x === subject).length;
-    // 2 + 1.5 a weekly lesson in 16 weeks, by semester: one begun has at least one grade.
+    // 2 + 1.5 a weekly lesson in 16 weeks, by semester: one begun has at least one grade, and its first one counts to
+    // the average (Aktywność, category 6, does not), so a short semester still has one.
     for (const sem of [1, 2]) {
       const days = all.filter((d) => semester(d) === sem && on(d).includes(subject));
       const count = Math.min(days.length, Math.max(1, Math.round(((2 + perWeek * 1.5) * days.length) / (16 * perWeek))));
-      for (const date of days.sort(() => rnd() - 0.5).slice(0, count)) {
+      for (const [k, date] of days.sort(() => rnd() - 0.5).slice(0, count).entries()) {
         const system = s.systems?.[subject];
-        const category = pick(rnd, GRADED_BY[kindOf(subject)]);
+        const category = pick(rnd, GRADED_BY[kindOf(subject)].filter((c) => k || c !== 6));
         if (system === 'percent') add(subject, date, category, `${part(100)}%`);
         else if (system) other[system].push(elsewhere[system](subject, date));
         else add(subject, date, category, value(subject, category));
@@ -291,7 +293,11 @@ function build(login) {
     HomeWorks: tests,
     ClassFreeDays: [{ Id: s.base + 1, DateFrom: ahead(11), DateTo: ahead(12), Type: { Id: 1 }, Name: login === 'demo1' ? 'Toruń: planetarium i Stare Miasto' : login === 'demo2' ? 'Ojców: Park Narodowy' : 'Wieliczka: kopalnia soli' }],
     TeacherFreeDays: [{ Id: s.base + 1, DateFrom: ahead(2), DateTo: ahead(2), Teacher: { Id: login === 'demo1' ? 8 : 5 } }],
-    SchoolFreeDays: [{ Id: 1, DateFrom: ahead(18), DateTo: ahead(18), Name: 'Dzień wolny od zajęć dydaktycznych' }],
+    SchoolFreeDays: [
+      { Id: 1, DateFrom: ahead(18), DateTo: ahead(18), Name: 'Dzień wolny od zajęć dydaktycznych' },
+      // The breaks of last, this and next school year, for the months the calendar can be moved to.
+      ...[-1, 0, 1].flatMap((k) => holidays(schoolYear(parse(T)) + k)).map((h, i) => ({ Id: 10 + i, DateFrom: h.from, DateTo: h.to, Name: h.name })),
+    ],
     ParentTeacherConferences: [{ Id: s.base + 1, Date: ahead(8), Name: 'Zebranie z rodzicami', Time: '17:30:00', Room: ROOMS[14], Topic: 'Wyniki w nauce i frekwencja', Teacher: { Id: s.tutor } }],
   };
 
@@ -308,7 +314,7 @@ function build(login) {
   );
 
   // The day Start shows (today until its last lesson ends) has a substitute; the school day after it loses its last lesson.
-  const next = weekday(T) % 6 && new Date().toTimeString().slice(0, 5) < HOURS[on(T).length - 1][1] ? T : ahead(1);
+  const next = on(T).length && new Date().toTimeString().slice(0, 5) < HOURS[on(T).length - 1][1] ? T : ahead(1);
   const cut = schoolDays(next, 1, 1)[0];
   const timetable = (start) => {
     const out = {};
@@ -480,8 +486,10 @@ function synergia(d, method, rest, query, body) {
   }
   if (rest.startsWith('Classrooms/')) return list('Classrooms', [...ids(rest)].map((Id) => ({ Id, Symbol: ROOMS[Id - 100] })));
   if (/^Calendars\/1$/.test(rest)) {
-    const inMonth = (date) => parse(date).getFullYear() === Number(query.get('year')) && parse(date).getMonth() + 1 === Number(query.get('month'));
-    return { Calendar: Object.fromEntries(Object.entries(d.calendar).map(([k, v]) => [k, v.filter((e) => inMonth(e.Date ?? e.DateFrom)).map((e) => ({ Id: e.Id }))])) };
+    // An entry spanning months comes in each of them; "-31" sorts after every day of a month, short ones too.
+    const month = `${query.get('year')}-${String(query.get('month')).padStart(2, '0')}`;
+    const inMonth = (e) => (e.Date ?? e.DateFrom) <= `${month}-31` && (e.DateTo ?? e.Date ?? e.DateFrom) >= `${month}-01`;
+    return { Calendar: Object.fromEntries(Object.entries(d.calendar).map(([k, v]) => [k, v.filter(inMonth).map((e) => ({ Id: e.Id }))])) };
   }
   for (const [path, key] of [['HomeWorks', 'HomeWorks'], ['Calendars/ClassFreeDays', 'ClassFreeDays'], ['Calendars/TeacherFreeDays', 'TeacherFreeDays'], ['Calendars/SchoolFreeDays', 'SchoolFreeDays'], ['ParentTeacherConferences', 'ParentTeacherConferences']])
     if (new RegExp(`^${path}/[\\d,]+$`).test(rest)) return list(key, d.calendar[key].filter((e) => ids(rest).has(e.Id)));

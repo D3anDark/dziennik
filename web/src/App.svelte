@@ -2,8 +2,8 @@
   import { api, post, session, net, clock, lookup, clearApiCache, inbox, update, drafts, DEMO } from './api.svelte.js';
   import { tick } from 'svelte';
   import { refreshUnread } from './webmail.js';
-  import { initials, fmtUnix, alias, mail } from './util.js';
-  import { t } from './i18n.js';
+  import { initials, fmtUnix, alias, mail, schoolYear, holidays, parse } from './util.js';
+  import { t, locale } from './i18n.js';
   import Icon from './Icon.svelte';
   import Login from './Login.svelte';
   import Home from './Home.svelte';
@@ -50,14 +50,21 @@
   const TABS = ['start', 'oceny', 'plan', 'wiadomosci'];
   // The form in .github/ISSUE_TEMPLATE/bug.yml, its `server` field filled in.
   const ISSUES = `https://github.com/unisic/dziennik/issues/new?template=bug.yml&server=${encodeURIComponent(location.host)}`;
-  // Days of this school year the demo can be seen on (main.js moves its clock there): around each semester's end.
-  const year = new Date().getFullYear() - (new Date().getMonth() < 8);
+  // Days of this school year the demo can be seen on (main.js moves its clock there): around each semester's end and
+  // the first day of each break. Easter moves between March and April, so the month comes from the date.
+  const year = schoolYear(new Date());
+  const [christmas, winter, easter] = holidays(year);
   const DEMO_DAYS = [
     ['', t('dziś')],
-    [`${year + 1}-01-18`, t('styczeń: koniec I semestru')],
-    [`${year + 1}-03-16`, t('marzec: II semestr')],
-    [`${year + 1}-06-08`, t('czerwiec: koniec roku')],
-    [`${year + 1}-07-01`, t('lipiec: wakacje')],
+    ...[
+      [christmas.from, t('przerwa świąteczna')],
+      [`${year + 1}-01-18`, t('koniec I semestru')],
+      [winter.from, t('ferie zimowe')],
+      [`${year + 1}-03-16`, t('II semestr')],
+      [easter.from, t('przerwa wielkanocna')],
+      [`${year + 1}-06-08`, t('koniec roku')],
+      [`${year + 1}-07-01`, t('wakacje')],
+    ].map(([d, what]) => [d, `${parse(d).toLocaleDateString(locale, { month: 'long' })}: ${what}`]),
   ];
   const demoDay = new URLSearchParams(location.search).get('dzien') ?? '';
   const visible = (p) => Object.hasOwn(PAGES, p) && (!PAGES[p].admin || Boolean(session.me?.admin));

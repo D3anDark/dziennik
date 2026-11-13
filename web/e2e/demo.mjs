@@ -139,9 +139,30 @@ check("third child: the school's own kind of attendance", await until(`${loaded}
 await js(`location.hash = '#/zachowanie'`);
 await until(`${loaded} && document.querySelectorAll('main .entries li').length > 0`);
 const points = await js(`[document.querySelector('main section:last-of-type h2')?.textContent, ...[...document.querySelectorAll('main .entries li')].map((li) => li.textContent.replace(/\\s+/g, ' ').trim())]`);
-const chips = await js(`[...document.querySelectorAll('main .entries .chip')].map((c) => Number(c.textContent))`);
-check('third child: behaviour points count from the start points of the semester', /^Punkty: -?\d+$/.test(points[0]) && points.at(-1).startsWith('100 Punkty startowe') &&
-  Number(points[0].slice(8)) === chips.reduce((a, b) => a + b, 0), points);
+const chips = await js(`[...document.querySelectorAll('main .entries li')].map((li) => [Number(li.querySelector('.chip')?.textContent), li.textContent.includes('Punkty startowe')])`);
+// The later semester first, each closed by its start points: the sum of each, the earlier first, as the heading gives them
+// ("Punkty: 116", or "Punkty: I sem. 105, II sem. 116" once both have entries).
+const sums = [];
+chips.reduce((run, [n, start]) => (start ? (sums.unshift(run + n), 0) : run + n), 0);
+check('third child: behaviour points count from the start points of each semester', /^Punkty: (-?\d+|I sem\. -?\d+, II sem\. -?\d+)$/.test(points[0]) &&
+  points.at(-1).startsWith('100 Punkty startowe') && chips.every(([n]) => Number.isFinite(n)) && points[0].match(/-?\d+/g).join() === sums.join(), [points[0], sums]);
+
+// The breaks of the school year in the banner, in the order of the year, and one of them picked: a week with no lessons,
+// the break in the calendar.
+const days = await js(`[...document.querySelectorAll('.banner option')].map((o) => [o.value, o.textContent])`);
+const labels = days.map((d) => d[1]).join(' | ');
+check('demo: the banner offers the breaks among the days of the year', /^dziś \| grudzień: przerwa świąteczna \| styczeń: koniec I semestru \| luty: ferie zimowe \| marzec: II semestr \| (marzec|kwiecień): przerwa wielkanocna \| czerwiec: koniec roku \| lipiec: wakacje$/.test(labels) &&
+  days.slice(1).every((d, i, all) => !i || all[i - 1][0] < d[0]), labels);
+const winter = days.find((d) => d[1] === 'luty: ferie zimowe')?.[0];
+await js(`location.hash = '#/plan'`);
+await until(loaded);
+await js(`(() => { const s = document.querySelector('.banner select'); s.value = '${winter}'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+const quiet = `/Brak lekcji w tym tygodniu|Brak planu na ten tydzień/.test(document.querySelector('main').innerText)`;
+check('demo: in the winter holidays the plan has no lessons', await until(`location.search === '?dzien=${winter}' && ${loaded} && ${quiet}`), await js(`document.querySelector('main').innerText.slice(0, 200)`));
+await js(`location.hash = '#/terminarz'`);
+check('demo: the calendar shows the winter holidays', await until(`${loaded} && document.querySelector('main').innerText.includes('Ferie zimowe')`), await js(`document.querySelector('main').innerText.slice(0, 300)`));
+const { data: winterShot } = await send('Page.captureScreenshot', { format: 'png' });
+await writeFile(`${out}/demo-desktop-terminarz-ferie.png`, Buffer.from(winterShot, 'base64'));
 
 // The link preview (vite.config.js) is read from the page as it is served, with no script run: there, one Container
 // within Discord's 3000 bytes, and every picture it names a file of the site.
