@@ -207,7 +207,7 @@ export default {
   "zastępstwo": "заміна",
   "do końca {m} min": "до кінця {m} хв",
   "następna": "наступний",
-  "Zaloguj się kontem LIBRUS (e-mail i hasło z portal.librus.pl).": "Увійдіть з обліковим записом LIBRUS (e-mail і пароль з portal.librus.pl).",
+  "Zaloguj się kontem LIBRUS (e-mail i hasło z": "Увійдіть з обліковим записом LIBRUS (e-mail і пароль з",
   "Login z\u00a0cyfr, otrzymany w\u00a0szkole, tu nie zadziała: najpierw dodaj to konto do swojego konta LIBRUS.": "Цифровий логін, отриманий у школі, тут не спрацює: спершу додайте цей обліковий запис до свого облікового запису LIBRUS.",
   "Wersja demonstracyjna: zadziała dowolny e-mail i\u00a0hasło.": "Демоверсія: підійде будь-який e-mail і пароль.",
   "E-mail": "E-mail",

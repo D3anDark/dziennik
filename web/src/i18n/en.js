@@ -207,7 +207,7 @@ export default {
   "zastępstwo": "substitution",
   "do końca {m} min": "{m} min left",
   "następna": "next",
-  "Zaloguj się kontem LIBRUS (e-mail i hasło z portal.librus.pl).": "Sign in with your LIBRUS account (the e-mail and password from portal.librus.pl).",
+  "Zaloguj się kontem LIBRUS (e-mail i hasło z": "Sign in with your LIBRUS account (the e-mail and password from",
   "Login z\u00a0cyfr, otrzymany w\u00a0szkole, tu nie zadziała: najpierw dodaj to konto do swojego konta LIBRUS.": "The numeric login you got at school will not work here: first add that account to your LIBRUS account.",
   "Wersja demonstracyjna: zadziała dowolny e-mail i\u00a0hasło.": "Demo version: any e-mail and password will do.",
   "E-mail": "E-mail",

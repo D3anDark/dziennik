@@ -33,7 +33,7 @@
 <form class="login card" onsubmit={submit}>
   <h1>Dziennik</h1>
   <Lang aria-label="Język · Language · Мова" />
-  <p class="muted">{t('Zaloguj się kontem LIBRUS (e-mail i hasło z portal.librus.pl).')}</p>
+  <p class="muted">{t('Zaloguj się kontem LIBRUS (e-mail i hasło z')} <a href="https://portal.librus.pl" target="_blank" rel="noopener">portal.librus.pl</a>).</p>
   <p class="muted">{t('Login z\u00a0cyfr, otrzymany w\u00a0szkole, tu nie zadziała: najpierw dodaj to konto do swojego konta LIBRUS.')}</p>
   {#if DEMO}<p class="muted">{t('Wersja demonstracyjna: zadziała dowolny e-mail i\u00a0hasło.')}</p>{/if}
   <label>
