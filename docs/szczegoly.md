@@ -114,6 +114,10 @@ więc jest on w `.gitignore`. Każdy inny plik dopisany przed kompilacją daje `
 
 ## Dostęp
 
+Do aplikacji loguje się e-mailem Konta LIBRUS, tym samym co na portal.librus.pl, i ten adres trafia na listę dostępu.
+Kto go nie pamięta, sprawdzi go w ustawieniach Konta LIBRUS: <https://portal.librus.pl/konto-librus/settings>. Adres
+e-mail w ustawieniach samej Synergii to osobne pole i może być inny.
+
 Zalogować się może tylko adres z listy dostępu. Administrator (adres z `ADMIN_EMAILS`) po zalogowaniu widzi w
 "Więcej" stronę "Dostęp do aplikacji": dodaje tam i usuwa adresy e-mail kont LIBRUS, bez restartu serwera. Lista
 leży w SQLite (tabela `allowed`, najwyżej 500 adresów). Usunięcie adresu od razu wylogowuje tę osobę i kasuje jej
