@@ -5,9 +5,10 @@
   import Rich from './Rich.svelte';
   import Icon from './Icon.svelte';
   import Files from './Files.svelte';
+  import { t } from './i18n.js';
 
   let { login } = $props();
-  const t = today();
+  const todayIso = today();
 
   async function load(login) {
     const [h, u, ls, s] = await Promise.all([
@@ -20,7 +21,7 @@
     return (h.HomeWorkAssignments ?? [])
       .map((x) => ({
         id: x.Id,
-        topic: plain(x.Topic) || 'Zadanie',
+        topic: plain(x.Topic) || t('Zadanie'),
         text: plain(x.Text),
         given: x.Date,
         due: x.DueDate,
@@ -36,7 +37,7 @@
   }
 
   function rank(h) {
-    return h.done ? 2 : (h.due ?? '') >= t ? 0 : 1;
+    return h.done ? 2 : (h.due ?? '') >= todayIso ? 0 : 1;
   }
 
   const list = resource(() => load(login), () => `homework/${login}`);
@@ -64,17 +65,17 @@
   }
 </script>
 
-<Async r={list} empty="Brak zadań domowych.">
+<Async r={list} empty={t('Brak zadań domowych.')}>
   {#snippet children(items)}
     <div class="card stack">
       {#each items as h (h.id)}
         <details class:unread={!h.read} class:done={h.done} ontoggle={(e) => opened(h, e)}>
           <summary>
             <strong>{h.topic}</strong>
-            {#if h.done}<span class="tag plain">wykonane</span>{:else if h.due && h.due < t}<span class="tag">po terminie</span>{/if}
+            {#if h.done}<span class="tag plain">{t('wykonane')}</span>{:else if h.due && h.due < todayIso}<span class="tag">{t('po terminie')}</span>{/if}
             <small class="muted">
               <!-- Each part kept whole, and a wrapped line starts with its "·", none left hanging at an end. -->
-              {[h.subject, h.due && `termin ${fmtDate(h.due)}`, h.given && `zadane ${fmtDate(h.given)}`, h.teacher]
+              {[h.subject, h.due && t('termin {date}', { date: fmtDate(h.due) }), h.given && t('zadane {date}', { date: fmtDate(h.given) }), h.teacher]
                 .filter(Boolean)
                 .map((p) => p.replaceAll(' ', '\u00a0'))
                 .join(' ·\u00a0')}
@@ -84,7 +85,7 @@
           {#if h.files.length}<Files link={(f) => synergia(login, `HomeWorkAssignments/Attachment/${h.id}-${f.Id}`)} files={h.files} />{/if}
           {#if !h.done}
             <button class="secondary" disabled={busy === h.id} onclick={() => markDone(h)}>
-              <Icon name="done" size={20} />{busy === h.id ? 'Zapisywanie…' : 'Oznacz jako wykonane'}
+              <Icon name="done" size={20} />{busy === h.id ? t('Zapisywanie…') : t('Oznacz jako wykonane')}
             </button>
           {/if}
           {#if error.id === h.id}<p class="error" role="alert">{error.text}</p>{/if}

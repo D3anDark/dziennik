@@ -3,6 +3,7 @@
   import { tick } from 'svelte';
   import { refreshUnread } from './webmail.js';
   import { initials, fmtUnix, alias, mail } from './util.js';
+  import { t } from './i18n.js';
   import Icon from './Icon.svelte';
   import Login from './Login.svelte';
   import Home from './Home.svelte';
@@ -27,24 +28,24 @@
   import { sync as syncPush, disable as disablePush } from './push.js';
 
   const PAGES = {
-    start: { label: 'Start', icon: 'home', view: Home },
-    oceny: { label: 'Oceny', icon: 'star', view: Grades },
-    plan: { label: 'Plan', icon: 'clock', view: Timetable },
-    frekwencja: { label: 'Frekwencja', icon: 'check', view: Attendance },
-    wiadomosci: { label: 'Wiadomości', icon: 'mail', view: Messages },
-    terminarz: { label: 'Terminarz', icon: 'calendar', view: Calendar },
-    aktywnosc: { label: 'Aktywność', icon: 'pulse', view: Activity },
-    zadania: { label: 'Zadania domowe', icon: 'book', view: Homework },
-    tematy: { label: 'Tematy lekcji', icon: 'list', view: Topics },
-    ogloszenia: { label: 'Ogłoszenia', icon: 'megaphone', view: Notices },
-    uwagi: { label: 'Uwagi', icon: 'note', view: Notes },
-    zachowanie: { label: 'Zachowanie', icon: 'smile', view: Behaviour },
-    nauczyciele: { label: 'Klasa i nauczyciele', icon: 'users', view: Teachers },
+    start: { label: t('Start'), icon: 'home', view: Home },
+    oceny: { label: t('Oceny'), icon: 'star', view: Grades },
+    plan: { label: t('Plan'), icon: 'clock', view: Timetable },
+    frekwencja: { label: t('Frekwencja'), icon: 'check', view: Attendance },
+    wiadomosci: { label: t('Wiadomości'), icon: 'mail', view: Messages },
+    terminarz: { label: t('Terminarz'), icon: 'calendar', view: Calendar },
+    aktywnosc: { label: t('Aktywność'), icon: 'pulse', view: Activity },
+    zadania: { label: t('Zadania domowe'), icon: 'book', view: Homework },
+    tematy: { label: t('Tematy lekcji'), icon: 'list', view: Topics },
+    ogloszenia: { label: t('Ogłoszenia'), icon: 'megaphone', view: Notices },
+    uwagi: { label: t('Uwagi'), icon: 'note', view: Notes },
+    zachowanie: { label: t('Zachowanie'), icon: 'smile', view: Behaviour },
+    nauczyciele: { label: t('Klasa i nauczyciele'), icon: 'users', view: Teachers },
     // `global` pages are about the signed-in person, not about one student.
-    powiadomienia: { label: 'Powiadomienia', icon: 'bell', view: Push, global: true },
-    ustawienia: { label: 'Ustawienia', icon: 'sliders', view: Settings, global: true },
-    dostep: { label: 'Dostęp do aplikacji', icon: 'key', view: Access, global: true, admin: true },
-    prywatnosc: { label: 'Prywatność', icon: 'eye', view: Privacy, global: true },
+    powiadomienia: { label: t('Powiadomienia'), icon: 'bell', view: Push, global: true },
+    ustawienia: { label: t('Ustawienia'), icon: 'sliders', view: Settings, global: true },
+    dostep: { label: t('Dostęp do aplikacji'), icon: 'key', view: Access, global: true, admin: true },
+    prywatnosc: { label: t('Prywatność'), icon: 'eye', view: Privacy, global: true },
   };
   const TABS = ['start', 'oceny', 'plan', 'wiadomosci'];
   // The form in .github/ISSUE_TEMPLATE/bug.yml, its `server` field filled in.
@@ -52,11 +53,11 @@
   // Days of this school year the demo can be seen on (main.js moves its clock there): around each semester's end.
   const year = new Date().getFullYear() - (new Date().getMonth() < 8);
   const DEMO_DAYS = [
-    ['', 'dziś'],
-    [`${year + 1}-01-18`, 'styczeń: koniec I semestru'],
-    [`${year + 1}-03-16`, 'marzec: II semestr'],
-    [`${year + 1}-06-08`, 'czerwiec: koniec roku'],
-    [`${year + 1}-07-01`, 'lipiec: wakacje'],
+    ['', t('dziś')],
+    [`${year + 1}-01-18`, t('styczeń: koniec I semestru')],
+    [`${year + 1}-03-16`, t('marzec: II semestr')],
+    [`${year + 1}-06-08`, t('czerwiec: koniec roku')],
+    [`${year + 1}-07-01`, t('lipiec: wakacje')],
   ];
   const demoDay = new URLSearchParams(location.search).get('dzien') ?? '';
   const visible = (p) => Object.hasOwn(PAGES, p) && (!PAGES[p].admin || Boolean(session.me?.admin));
@@ -141,7 +142,7 @@
   });
 
   $effect(() => {
-    const label = route.page === 'wiecej' ? 'Więcej' : route.page !== 'start' && PAGES[route.page]?.label;
+    const label = route.page === 'wiecej' ? t('Więcej') : route.page !== 'start' && PAGES[route.page]?.label;
     document.title = label ? `${label} · Dziennik` : 'Dziennik';
   });
 
@@ -165,14 +166,14 @@
    * (Me.Account.GroupId 8 and 5, as seen live), so the role comes first and the class only if roles repeat too.
    * Read only when names repeat.
    */
-  const ROLES = { 8: 'uczeń', 5: 'rodzic' };
+  const ROLES = { 8: t('uczeń'), 5: t('rodzic') };
   let facts = $state({});
   const twins = (a) => accounts.filter((x) => x !== a && x.name === a.name);
   $effect(() => {
     for (const a of accounts.filter((x) => twins(x).length)) {
       Promise.all([lookup(a.login, 'Me'), lookup(a.login, 'Classes')]).then(([me, c]) => {
         const cls = [c.Class?.Number, c.Class?.Symbol].filter((x) => x != null).join('');
-        facts[a.login] = { role: ROLES[me.Me?.Account?.GroupId], cls: cls && `klasa ${cls}` };
+        facts[a.login] = { role: ROLES[me.Me?.Account?.GroupId], cls: cls && t('klasa {cls}', { cls }) };
       });
     }
   });
@@ -209,19 +210,19 @@
 </script>
 
 {#if session.me === undefined}
-  <p class="center muted" role="status">Ładowanie…</p>
+  <p class="center muted" role="status">{t('Ładowanie…')}</p>
 {:else if !session.me}
   <Login />
 {:else}
   <!-- The hash is the router, so the skip link moves focus instead of following an anchor. -->
-  <button class="skip" onclick={() => document.querySelector('main').focus()}>Przejdź do treści</button>
+  <button class="skip" onclick={() => document.querySelector('main').focus()}>{t('Przejdź do treści')}</button>
   <div class="shell" class:writing>
     <aside class="side">
       <div class="brandbar">
         <span class="wordmark">Dziennik</span>
-        <button class="icon-btn" class:busy={net.busy > 0} onclick={() => clock.tick++} aria-label="Odśwież" title="Odśwież"><Icon name="refresh" size={18} /></button>
+        <button class="icon-btn" class:busy={net.busy > 0} onclick={() => clock.tick++} aria-label={t('Odśwież')} title={t('Odśwież')}><Icon name="refresh" size={18} /></button>
       </div>
-      <div class="accounts" role="group" aria-label="Uczeń">
+      <div class="accounts" role="group" aria-label={t('Uczeń')}>
         {#each accounts as a (a.login)}
           <button class="nav-row account" aria-pressed={a.login === login} onclick={() => (login = a.login)}>
             <span class="avatar" aria-hidden="true">{initials(a.name ?? a.login)}</span>
@@ -231,9 +232,9 @@
           <span class="nav-row account">{mail(session.me.email)}</span>
         {/each}
       </div>
-      <nav aria-label="Sekcje">
+      <nav aria-label={t('Sekcje')}>
         {#each Object.keys(PAGES).filter((p) => visible(p) && p !== 'ustawienia') as p (p)}
-          {#if p === 'powiadomienia'}<p class="group">Konto</p>{/if}
+          {#if p === 'powiadomienia'}<p class="group">{t('Konto')}</p>{/if}
           <a class="nav-row" href="#/{p}" aria-current={route.page === p ? 'page' : undefined}>
             <Icon name={PAGES[p].icon} size={18} />
             <span class="grow">{PAGES[p].label}</span>
@@ -246,9 +247,9 @@
         <div class="me">
           <small class="muted grow">{mail(session.me.email)}</small>
           <!-- Icons beside the logout one: rows of their own would make a 1280×800 sidebar scroll. -->
-          <a class="button icon-btn" href="#/ustawienia" aria-current={route.page === 'ustawienia' ? 'page' : undefined} aria-label="Ustawienia" title="Ustawienia"><Icon name="sliders" size={18} /></a>
-          <a class="button icon-btn" href={ISSUES} target="_blank" rel="noopener" aria-label="Zgłoś błąd" title="Zgłoś błąd"><Icon name="flag" size={18} /></a>
-          <button class="icon-btn" onclick={logout} aria-label="Wyloguj" title="Wyloguj"><Icon name="logout" size={18} /></button>
+          <a class="button icon-btn" href="#/ustawienia" aria-current={route.page === 'ustawienia' ? 'page' : undefined} aria-label={t('Ustawienia')} title={t('Ustawienia')}><Icon name="sliders" size={18} /></a>
+          <a class="button icon-btn" href={ISSUES} target="_blank" rel="noopener" aria-label={t('Zgłoś błąd')} title={t('Zgłoś błąd')}><Icon name="flag" size={18} /></a>
+          <button class="icon-btn" onclick={logout} aria-label={t('Wyloguj')} title={t('Wyloguj')}><Icon name="logout" size={18} /></button>
         </div>
       </div>
     </aside>
@@ -258,7 +259,7 @@
         <span class="avatar" aria-hidden="true">{initials(name)}</span>
         {#if accounts.length > 1}
           <label class="picker">
-            <select bind:value={login} aria-label="Uczeń">
+            <select bind:value={login} aria-label={t('Uczeń')}>
               {#each accounts as a (a.login)}
                 <option value={a.login}>{[a.name ?? a.login, about[a.login]].filter(Boolean).join(' · ')}</option>
               {/each}
@@ -268,16 +269,16 @@
         {:else}
           <span class="student">{name}</span>
         {/if}
-        <button class="icon-btn" class:busy={net.busy > 0} onclick={() => clock.tick++} aria-label="Odśwież" title="Odśwież">
+        <button class="icon-btn" class:busy={net.busy > 0} onclick={() => clock.tick++} aria-label={t('Odśwież')} title={t('Odśwież')}>
           <Icon name="refresh" />
         </button>
       </header>
 
       {#if DEMO}
         <p class="banner" role="note">
-          <span><strong>Wersja demo:</strong> przykładowe dane. <a href="https://github.com/unisic/dziennik">Kod i&nbsp;instalacja</a></span>
+          <span><strong>{t('Wersja demo:')}</strong> {t('przykładowe dane.')} <a href="https://github.com/unisic/dziennik">{t('Kod i\u00a0instalacja')}</a></span>
           <label>
-            Data
+            {t('Data')}
             <!-- A new day is new data: the page loads again, as the demo's data is made once per load. -->
             <select value={demoDay} onchange={(e) => (location.search = e.currentTarget.value && `?dzien=${e.currentTarget.value}`)}>
               {#each DEMO_DAYS.some(([d]) => d === demoDay) ? DEMO_DAYS : [...DEMO_DAYS, [demoDay, demoDay]] as [d, label] (d)}
@@ -288,26 +289,26 @@
         </p>
       {/if}
       {#if !net.online}
-        <p class="banner" role="status"><span><strong>Offline:</strong> dane z ostatniego połączenia{net.synced ? ` (${fmtUnix(net.synced / 1000)})` : ''}.</span></p>
+        <p class="banner" role="status"><span><strong>{t('Offline:')}</strong> {t('dane z ostatniego połączenia')}{net.synced ? ` (${fmtUnix(net.synced / 1000)})` : ''}.</span></p>
       {/if}
       <!-- Shown again once a message being written is sent or dropped; until then the new build waits. -->
       {#if update.ready && !drafts.open}
-        <p class="banner" role="status">Jest nowa wersja aplikacji.<button class="secondary" onclick={() => location.reload()}>Zaktualizuj</button></p>
+        <p class="banner" role="status">{t('Jest nowa wersja aplikacji.')}<button class="secondary" onclick={() => location.reload()}>{t('Zaktualizuj')}</button></p>
       {/if}
 
       <main tabindex="-1">
         {#if more.includes(route.page) && !route.arg}
-          <p><a class="back" href="#/wiecej"><Icon name="left" size={18} />Więcej</a></p>
+          <p><a class="back" href="#/wiecej"><Icon name="left" size={18} />{t('Więcej')}</a></p>
         {/if}
         <!-- A message and the form name themselves, under their own way back. -->
         {#if route.page !== 'start' && !(route.page === 'wiadomosci' && route.arg)}
-          <h1 class="title" tabindex="-1">{route.page === 'wiecej' ? 'Więcej' : PAGES[route.page].label}</h1>
+          <h1 class="title" tabindex="-1">{route.page === 'wiecej' ? t('Więcej') : PAGES[route.page].label}</h1>
         {/if}
         {#if route.page === 'wiecej'}
           <!-- The student's pages, then the account's, as in the sidebar. -->
           {#each [more.filter((p) => !PAGES[p].global), more.filter((p) => PAGES[p].global)] as group, i (i)}
             {#if group.length}
-              {#if i}<h2 class="section">Konto</h2>{/if}
+              {#if i}<h2 class="section">{t('Konto')}</h2>{/if}
               <ul class="card list menu">
                 {#each group as p (p)}
                   <li>
@@ -322,15 +323,15 @@
             {/if}
           {/each}
           <Install />
-          <a class="button wide" href={ISSUES} target="_blank" rel="noopener"><Icon name="flag" size={20} />Zgłoś błąd</a>
-          <p class="center muted">Zalogowano jako {mail(session.me.email)}</p>
-          <button class="secondary wide" onclick={logout}><Icon name="logout" size={20} />Wyloguj</button>
+          <a class="button wide" href={ISSUES} target="_blank" rel="noopener"><Icon name="flag" size={20} />{t('Zgłoś błąd')}</a>
+          <p class="center muted">{t('Zalogowano jako {email}', { email: mail(session.me.email) })}</p>
+          <button class="secondary wide" onclick={logout}><Icon name="logout" size={20} />{t('Wyloguj')}</button>
         {:else if route.page === 'ustawienia'}
           <Settings {logout} issues={ISSUES} />
         {:else if PAGES[route.page].global}
           <View />
         {:else if !accounts.length}
-          <p class="center muted">Do konta LIBRUS nie jest podpięte żadne konto ucznia.</p>
+          <p class="center muted">{t('Do konta LIBRUS nie jest podpięte żadne konto ucznia.')}</p>
         {:else if login}
           {#key login}
             <View {login} arg={route.arg} />
@@ -339,7 +340,7 @@
       </main>
     </div>
 
-    <nav class="tabs" aria-label="Sekcje">
+    <nav class="tabs" aria-label={t('Sekcje')}>
       {#each [...TABS, 'wiecej'] as p (p)}
         {@const current = p === 'wiecej' ? !TABS.includes(route.page) : route.page === p}
         <a href="#/{p}" aria-current={current ? 'page' : undefined}>
@@ -347,7 +348,7 @@
             <Icon name={p === 'wiecej' ? 'grid' : PAGES[p].icon} size={22} />
             {#if p === 'wiadomosci' && inbox.unread}<span class="badge">{inbox.unread}</span>{/if}
           </span>
-          {p === 'wiecej' ? 'Więcej' : PAGES[p].label}
+          {p === 'wiecej' ? t('Więcej') : PAGES[p].label}
         </a>
       {/each}
     </nav>

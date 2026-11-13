@@ -2,6 +2,7 @@
   import { lookup, resource, byId } from './api.svelte.js';
   import { person } from './util.js';
   import Async from './Async.svelte';
+  import { t } from './i18n.js';
 
   let { login } = $props();
 
@@ -11,12 +12,12 @@
     const [subjects, users] = [byId(s.Subjects), byId(u.Users)];
     const bySubject = new Map();
     for (const l of ls.Lessons) {
-      const name = subjects.get(String(l.Subject?.Id))?.Name ?? 'Inne';
+      const name = subjects.get(String(l.Subject?.Id))?.Name ?? t('Inne');
       if (!bySubject.has(name)) bySubject.set(name, new Set());
       if (l.Teacher?.Id) bySubject.get(name).add(person(users.get(String(l.Teacher.Id))));
     }
     return [...bySubject]
-      .map(([name, t]) => ({ name, teachers: [...t].join(', ') }))
+      .map(([name, set]) => ({ name, teachers: [...set].join(', ') }))
       .sort((p, q) => p.name.localeCompare(q.name, 'pl'));
   }
 
@@ -26,12 +27,12 @@
   async function about(login) {
     const [c, s, u] = await Promise.all([lookup(login, 'Classes'), lookup(login, 'Schools'), lookup(login, 'Users')]);
     const [cls, school, users] = [c.Class, s.School, byId(u.Users)];
-    const tutors = (cls?.ClassTutors ?? []).filter((t) => users.has(String(t.Id))).map((t) => person(users.get(String(t.Id))));
+    const tutors = (cls?.ClassTutors ?? []).filter((x) => users.has(String(x.Id))).map((x) => person(users.get(String(x.Id))));
     return [
-      ['Klasa', [cls?.Number, cls?.Symbol].filter((x) => x != null).join('')],
-      ['Wychowawca', tutors.join(', ')],
-      ['Szkoła', school?.Name],
-      ['Adres', [[school?.Street, school?.BuildingNumber].filter(Boolean).join(' '), school?.Town].filter(Boolean).join(', ')],
+      [t('Klasa'), [cls?.Number, cls?.Symbol].filter((x) => x != null).join('')],
+      [t('Wychowawca'), tutors.join(', ')],
+      [t('Szkoła'), school?.Name],
+      [t('Adres'), [[school?.Street, school?.BuildingNumber].filter(Boolean).join(' '), school?.Town].filter(Boolean).join(', ')],
     ].filter(([, v]) => v);
   }
 
@@ -46,7 +47,7 @@
   </ul>
 {/if}
 
-<Async r={list} empty="Brak przypisanych nauczycieli.">
+<Async r={list} empty={t('Brak przypisanych nauczycieli.')}>
   {#snippet children(items)}
     <ul class="card totals">
       {#each items as s (s.name)}

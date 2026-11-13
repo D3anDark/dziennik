@@ -6,11 +6,12 @@
   import { swipe } from './swipe.js';
   import Async from './Async.svelte';
   import Lessons, { wallClock, teacher, hue, kind, place, minutes } from './Lessons.svelte';
+  import { t, locale } from './i18n.js';
 
   let { login } = $props();
 
-  const t = today();
-  const thisMonday = mondayOf(t);
+  const todayIso = today();
+  const thisMonday = mondayOf(todayIso);
   /** One day or the whole week, remembered on this device. Unset, a phone shows a day and a wide screen the week. */
   let view = $state(choiceOf(PLAN) || (matchMedia('(min-width: 900px)').matches ? 'week' : 'day'));
   function show(v) {
@@ -23,7 +24,7 @@
   }
 
   /** The day the view is about; its week is the one loaded. */
-  let day = $state(t);
+  let day = $state(todayIso);
   const week = $derived(mondayOf(day));
   const days = resource(() => loadWeek(login, week), () => `week/${login}/${week}`);
   /** The calendar's tests and quizzes in the months the week spans. A failure leaves the plan without them, said nowhere. */
@@ -45,7 +46,7 @@
   };
   const follow = () => {
     picked = false;
-    day = t;
+    day = todayIso;
   };
   const focus = $derived(days.data ? upcomingDay(days.data) : undefined);
   $effect(() => {
@@ -67,8 +68,8 @@
   const turn = (dir) => (view === 'day' ? step(dir) : pick(shift(day, 7 * dir)));
 
   // The days shown, not the calendar week: Monday to Friday unless the school teaches at the weekend.
-  const range = $derived(new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'long' }).formatRange(parse(week), parse(strip.at(-1))));
-  const weekday = (d) => parse(d).toLocaleDateString('pl-PL', { weekday: 'short' });
+  const range = $derived(new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long' }).formatRange(parse(week), parse(strip.at(-1))));
+  const weekday = (d) => parse(d).toLocaleDateString(locale, { weekday: 'short' });
 
   /** The week on a clock: whole hours from the earliest start to the latest end, a lesson as tall as it lasts. */
   function hours(list) {
@@ -106,9 +107,9 @@
       l.Subject?.Name,
       teacher(l.Teacher),
       l.room && room(l.room),
-      l.IsCanceled && 'odwołana',
-      l.IsSubstitutionClass && 'zastępstwo',
-      l.was && `zamiast: ${[l.was.subject, l.was.teacher].filter(Boolean).join(', ')}`,
+      l.IsCanceled && t('odwołana'),
+      l.IsSubstitutionClass && t('zastępstwo'),
+      l.was && t('zamiast: {was}', { was: [l.was.subject, l.was.teacher].filter(Boolean).join(', ') }),
       ...tests.map((e) => [kind(e.category), e.detail].filter(Boolean).join(': ')),
     ]
       .filter(Boolean)
@@ -127,26 +128,26 @@
 </script>
 
 <div class="toolbar">
-  <div class="segmented" role="group" aria-label="Widok planu">
-    <button aria-pressed={view === 'day'} onclick={() => show('day')}>Dzień</button>
-    <button aria-pressed={view === 'week'} onclick={() => show('week')}>Tydzień</button>
+  <div class="segmented" role="group" aria-label={t('Widok planu')}>
+    <button aria-pressed={view === 'day'} onclick={() => show('day')}>{t('Dzień')}</button>
+    <button aria-pressed={view === 'week'} onclick={() => show('week')}>{t('Tydzień')}</button>
   </div>
 </div>
 
 <div class="pager">
-  <button class="icon-btn" onclick={() => pick(shift(day, -7))} aria-label="Poprzedni tydzień" title="Poprzedni tydzień"><Icon name="left" /></button>
+  <button class="icon-btn" onclick={() => pick(shift(day, -7))} aria-label={t('Poprzedni tydzień')} title={t('Poprzedni tydzień')}><Icon name="left" /></button>
   <p class="range" aria-live={view === 'week' ? 'polite' : undefined}>{range}</p>
-  <button class="icon-btn" onclick={() => pick(shift(day, 7))} aria-label="Następny tydzień" title="Następny tydzień"><Icon name="right" /></button>
-  <button class="secondary now" onclick={follow} disabled={!picked}>Dziś</button>
+  <button class="icon-btn" onclick={() => pick(shift(day, 7))} aria-label={t('Następny tydzień')} title={t('Następny tydzień')}><Icon name="right" /></button>
+  <button class="secondary now" onclick={follow} disabled={!picked}>{t('Dziś')}</button>
 </div>
 {#if view === 'day'}
-  <div class="days" role="group" aria-label="Dzień tygodnia">
+  <div class="days" role="group" aria-label={t('Dzień tygodnia')}>
     {#each strip as d (d)}
       <button
         aria-pressed={d === day}
-        aria-current={d === t ? 'date' : undefined}
-        aria-label={[fmtDay(d), canceled(d) ? 'odwołane lekcje' : changed(d) && 'zmiany w planie'].filter(Boolean).join(', ')}
-        title={canceled(d) ? 'Odwołane lekcje' : changed(d) ? 'Zmiany w planie' : undefined}
+        aria-current={d === todayIso ? 'date' : undefined}
+        aria-label={[fmtDay(d), canceled(d) ? t('odwołane lekcje') : changed(d) && t('zmiany w planie')].filter(Boolean).join(', ')}
+        title={canceled(d) ? t('Odwołane lekcje') : changed(d) ? t('Zmiany w planie') : undefined}
         onclick={() => pick(d)}
       >
         <small>{weekday(d)}</small>
@@ -157,28 +158,28 @@
   </div>
   {#if strip.some(changed)}
     <p class="legend muted" aria-hidden="true">
-      {#if strip.some(canceled)}<span><span class="dot on alert"></span>odwołane lekcje</span>{/if}
-      {#if strip.some((d) => changed(d) && !canceled(d))}<span><span class="dot on"></span>zmiany w planie</span>{/if}
+      {#if strip.some(canceled)}<span><span class="dot on alert"></span>{t('odwołane lekcje')}</span>{/if}
+      {#if strip.some((d) => changed(d) && !canceled(d))}<span><span class="dot on"></span>{t('zmiany w planie')}</span>{/if}
     </p>
   {/if}
 {/if}
 
 <div class="swipe" use:swipe={{ prev: () => turn(-1), next: () => turn(1) }}>
   {#if view === 'day'}
-    <section class="card" class:today={day === t}>
+    <section class="card" class:today={day === todayIso}>
       <h2 class="day" aria-live="polite">{fmtDay(day)}</h2>
-      <Async r={days} empty="Brak planu na ten tydzień.">
+      <Async r={days} empty={t('Brak planu na ten tydzień.')}>
         {#snippet children()}
-          <Lessons lessons={dayOf(day)?.lessons ?? []} live={day === t} events={examsOn(day)} />
+          <Lessons lessons={dayOf(day)?.lessons ?? []} live={day === todayIso} events={examsOn(day)} />
         {/snippet}
       </Async>
     </section>
   {:else}
-    <Async r={days} empty="Brak planu na ten tydzień.">
+    <Async r={days} empty={t('Brak planu na ten tydzień.')}>
       {#snippet children(list)}
         {@const shown = list.filter((d) => school(d.date))}
         {#if !shown.some((d) => d.lessons.length)}
-          <p class="muted">Brak lekcji w tym tygodniu.</p>
+          <p class="muted">{t('Brak lekcji w tym tygodniu.')}</p>
         {:else}
           {@const span = hours(shown)}
           {@const now = minutes(time.now)}
@@ -187,8 +188,8 @@
             {#each shown as d (d.date)}
               <button
                 class="wday"
-                aria-current={d.date === t ? 'date' : undefined}
-                aria-label={[fmtDay(d.date), canceled(d.date) ? 'odwołane lekcje' : changed(d.date) && 'zmiany w planie'].filter(Boolean).join(', ')}
+                aria-current={d.date === todayIso ? 'date' : undefined}
+                aria-label={[fmtDay(d.date), canceled(d.date) ? t('odwołane lekcje') : changed(d.date) && t('zmiany w planie')].filter(Boolean).join(', ')}
                 onclick={() => open(d.date)}
               >
                 <small>{weekday(d.date)}</small>
@@ -202,7 +203,7 @@
             {#each shown as d (d.date)}
               {@const cols = columns(d.lessons)}
               {@const tests = place(d.lessons, examsOn(d.date))}
-              {@const live = d.date === t}
+              {@const live = d.date === todayIso}
               <ol class="column" aria-label={fmtDay(d.date)}>
                 {#each d.lessons as l, i (i)}
                   {@const at = cols.get(l)}
@@ -218,7 +219,7 @@
                     style:--hue={hue(l.Subject)}
                   >
                     <button aria-label={said(l, own)} title={said(l, own)} onclick={() => open(d.date)}>
-                      <span class="time">{running ? `do końca ${minutes(l.HourTo) - now} min` : `${l.HourFrom}–${l.HourTo}`}</span>
+                      <span class="time">{running ? t('do końca {m} min', { m: minutes(l.HourTo) - now }) : `${l.HourFrom}–${l.HourTo}`}</span>
                       <!-- "j. polski", as in the school's own plan: two lines of a narrow column hold it whole. -->
                       <strong class="name">{(l.Subject?.Name ?? '').replace(/^język /i, 'j. ')}</strong>
                       {#each own as e (e.id)}<em class="tag exam">{kind(e.category)}</em>{/each}

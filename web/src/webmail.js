@@ -1,5 +1,6 @@
 import { api, post, inbox, refreshUnread as countByApi } from './api.svelte.js';
 import { plain, surnameFirst } from './util.js';
+import { t } from './i18n.js';
 
 /**
  * Messages read from the Synergia website, for accounts the API refuses (no Mobilne Dodatki). The server passes
@@ -54,7 +55,7 @@ export async function folder(login, name) {
     return [
       {
         id: `${n}-${id}`,
-        title: text(title) || '(bez tematu)',
+        title: text(title) || t('(bez tematu)'),
         who: surnameFirst(text(who)),
         date: unix(text(date)),
         sent: name === 'out',
@@ -75,7 +76,7 @@ export async function message(login, key) {
   // A sent message has no sender row; its recipients are the rows of the "Przeczytano" table.
   const readers = n === String(FOLDER.out) ? [...(label('Przeczytano')?.closest('table').rows ?? [])].slice(1) : [];
   return {
-    title: field('Temat') || '(bez tematu)',
+    title: field('Temat') || t('(bez tematu)'),
     from: surnameFirst(field('Nadawca')),
     to: readers.map((tr) => surnameFirst(text(tr.cells[0]))).filter(Boolean).join(', '),
     date: unix(field('Wysłano')),

@@ -1,7 +1,10 @@
 // Put into every page the server serves (`inject` in main.rs), whoever wrote the frontend. The server fills in the
 // warning; for an official build it sends this script empty.
 (() => {
-  const text = __WARNING__;
+  const texts = __WARNING__;
+  // The page's language (ours sets it from its own switch before this runs), else the browser's, else Polish.
+  const lang = [document.documentElement.lang, ...(navigator.languages ?? [])].map((l) => l.slice(0, 2).toLowerCase()).find((l) => Object.hasOwn(texts, l)) ?? 'pl';
+  const { title: heading, text, ok: button } = texts[lang];
   const red = '#b91c1c';
   // Styles go through the CSSOM: the server's CSP refuses inline <style> and style attributes.
   const make = (tag, style = {}, ns) => {
@@ -10,6 +13,7 @@
     return e;
   };
   const host = make('dziennik-warning');
+  host.lang = lang;
   // A closed shadow root keeps the page's own styles and scripts from reaching the window by accident.
   const root = host.attachShadow({ mode: 'closed' });
   // The dialog covers the whole screen and darkens it; the card sits in the middle.
@@ -23,9 +27,9 @@
     padding: '1rem',
     border: '0',
     background: 'rgba(20, 0, 0, 0.8)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
   });
   const card = make('div', {
     boxSizing: 'border-box',
@@ -39,8 +43,8 @@
     background: '#fff',
     color: '#1a1a1a',
     boxShadow: '0 24px 64px rgba(0, 0, 0, 0.5)',
-    font: "18px/1.55 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-    textAlign: 'center',
+                    font: "18px/1.55 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+                    textAlign: 'center',
   });
   const svg = 'http://www.w3.org/2000/svg';
   const icon = make('svg', { display: 'block', width: '72px', height: '72px', margin: '0 auto 0.75rem' }, svg);
@@ -62,7 +66,7 @@
     textTransform: 'uppercase',
   });
   title.id = 'title';
-  title.textContent = 'Ostrzeżenie';
+  title.textContent = heading;
   const p = make('p', { margin: '0 0 1.5rem', fontWeight: '500', textWrap: 'pretty' });
   p.id = 'text';
   p.textContent = text;
@@ -78,7 +82,7 @@
     cursor: 'pointer',
   });
   ok.type = 'button';
-  ok.textContent = 'Rozumiem';
+  ok.textContent = button;
   // Removed, not closed: the inline display:flex would keep a closed dialog on screen.
   ok.addEventListener('click', () => host.remove());
   // Only the button dismisses it, so Escape cannot wave it away unread.

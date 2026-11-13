@@ -460,28 +460,38 @@ async fn about(State(app): Shared) -> Json<Value> {
 // the start in `main`, `inject`), so a modified server has to change each before it stops warning (AGENTS.md). None of
 // them stops a determined host.
 
-/// The warning for a build not confirmed as the official one; nothing for an official build.
-fn warning(build: &str) -> Option<&'static str> {
-    match build {
-        "official" => None,
-        "modified" => Some(
+/// The warning for a build not confirmed as the official one, as title, text and button in each language of the
+/// interface (src/warning.js picks the page's); nothing for an official build.
+fn warning(build: &str) -> Option<Value> {
+    let [pl, en, uk] = match build {
+        "official" => return None,
+        "modified" => [
             "Hostowana wersja serwera jest niezgodna z\u{a0}tą na oficjalnym repozytorium. Jeżeli nie ufasz osobie hostującej ten projekt, nie podawaj swojego loginu i\u{a0}hasła.",
-        ),
-        _ => Some(
+            "The hosted version of the server differs from the one in the official repository. If you do not trust the person hosting this project, do not enter your login and password.",
+            "Розміщена версія сервера відрізняється від версії в\u{a0}офіційному репозиторії. Якщо ви не довіряєте особі, яка розміщує цей проєкт, не вводьте свій логін і\u{a0}пароль.",
+        ],
+        _ => [
             "Nie da się potwierdzić, że hostowana wersja serwera jest zgodna z\u{a0}tą na oficjalnym repozytorium. Jeżeli nie ufasz osobie hostującej ten projekt, nie podawaj swojego loginu i\u{a0}hasła.",
-        ),
-    }
+            "There is no way to confirm that the hosted version of the server matches the one in the official repository. If you do not trust the person hosting this project, do not enter your login and password.",
+            "Неможливо підтвердити, що розміщена версія сервера збігається з\u{a0}версією в\u{a0}офіційному репозиторії. Якщо ви не довіряєте особі, яка розміщує цей проєкт, не вводьте свій логін і\u{a0}пароль.",
+        ],
+    };
+    Some(json!({
+        "pl": { "title": "Ostrzeżenie", "text": pl, "ok": "Rozumiem" },
+        "en": { "title": "Warning", "text": en, "ok": "I understand" },
+        "uk": { "title": "Попередження", "text": uk, "ok": "Зрозуміло" },
+    }))
 }
 
 /// src/warning.js with the warning in it. The file is compiled in: deleting it stops the build.
-fn warning_script(text: &str) -> String {
-    include_str!("warning.js").replace("__WARNING__", &json!(text).to_string())
+fn warning_script(texts: &Value) -> String {
+    include_str!("warning.js").replace("__WARNING__", &texts.to_string())
 }
 
 /// The script `inject` puts into every page: a window with the warning, or nothing for an official build. A signed-in
 /// session gets nothing as well: the warning is about giving the login and password, which it has already done.
 async fn warning_js(State(app): Shared, headers: HeaderMap) -> Response {
-    let js = warning(app.build).filter(|_| app.user(&headers).is_err()).map(warning_script);
+    let js = warning(app.build).filter(|_| app.user(&headers).is_err()).as_ref().map(warning_script);
     let headers = [(header::CONTENT_TYPE, "text/javascript; charset=utf-8"), (header::CACHE_CONTROL, "no-store")];
     (headers, js.unwrap_or_default()).into_response()
 }
@@ -696,8 +706,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         other => return Err(format!("build state {other:?} with commit {commit:?} is not one build.rs gives").into()),
     };
     // An emptied src/warning.js, or one without the place for the text, would warn no one: the server does not start.
-    if let Some(text) = warning(build)
-        && !warning_script(text).contains(&json!(text).to_string())
+    if let Some(texts) = warning(build)
+        && !warning_script(&texts).contains(&texts.to_string())
     {
         return Err("src/warning.js does not show the build warning (see AGENTS.md)".into());
     }
@@ -813,7 +823,8 @@ mod tests {
         let script = http.get(format!("{base}/api/warning.js")).send().await.unwrap();
         assert_eq!(script.headers()[header::CONTENT_TYPE], "text/javascript; charset=utf-8");
         let script = script.text().await.unwrap();
-        assert!(script.contains("const text = \"Hostowana wersja serwera jest niezgodna z\u{a0}tą"), "{script}");
+        assert!(script.contains("\"text\":\"Hostowana wersja serwera jest niezgodna z\u{a0}tą"), "{script}");
+        assert!(script.contains("\"text\":\"The hosted version") && script.contains("\"text\":\"Розміщена версія"), "{script}");
         let script_for = async |sid: &str| {
             let res = http.get(format!("{base}/api/warning.js")).header(header::COOKIE, format!("sid={sid}")).send().await;
             res.unwrap().text().await.unwrap()
@@ -821,7 +832,7 @@ mod tests {
         assert_eq!(script_for(&user).await, "", "a signed-in session is not warned again");
         assert_eq!(script_for("forged").await, script, "a session the server never issued is still warned");
         assert_eq!(warning("official"), None, "an official build sends the script empty");
-        assert!(warning("unknown").unwrap().starts_with("Nie da się potwierdzić"));
+        assert!(warning("unknown").unwrap()["pl"]["text"].as_str().unwrap().starts_with("Nie da się potwierdzić"));
         std::fs::remove_dir_all(&web).unwrap();
         let ask = async |method: Method, path: &str, sid: &str, body: Option<Value>| {
             let mut req = http.request(method, format!("{base}{path}")).header(header::COOKIE, format!("sid={sid}"));

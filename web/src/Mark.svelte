@@ -1,4 +1,5 @@
 <script>
+  import { t } from './i18n.js';
   /**
    * A grade as its chip shows it: long text grades as school records shorten them, the full word kept in `title`.
    * `was`: the grades it improves, oldest first; the last of them stands struck out before it, as a replaced subject
@@ -9,4 +10,4 @@
   const short = $derived(SHORT[String(value).toLowerCase()]);
 </script>
 
-{#if was?.length}<s class="was">{was.at(-1).value}</s><span class="sr">, poprawiona na{' '}</span>{/if}{#if short}<abbr title={value}>{short}</abbr>{:else}{value}{/if}
+{#if was?.length}<s class="was">{was.at(-1).value}</s><span class="sr">{t(', poprawiona na')}{' '}</span>{/if}{#if short}<abbr title={value}>{short}</abbr>{:else}{value}{/if}

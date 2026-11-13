@@ -97,7 +97,9 @@ serwer nie sprawdza: da się je przestawić dowolnie, a platformy budujące mog�
 oraz log startu. Gdy wynik nie jest `official`, ostrzeżenie pokazuje sam serwer, niezależnie od frontendu: do każdej
 strony HTML, którą serwuje z `WEB_DIR` (nasz frontend albo dowolny inny), dopisuje skrypt `/api/warning.js`, a ten
 otwiera okno modalne: "Hostowana wersja serwera jest niezgodna z tą na oficjalnym repozytorium. Jeżeli nie ufasz
-osobie hostującej ten projekt, nie podawaj swojego loginu i hasła." Przy wersji oficjalnej skrypt jest pusty, tak samo
+osobie hostującej ten projekt, nie podawaj swojego loginu i hasła." Okno jest w języku strony (`lang` przy `<html>`,
+który nasz frontend ustawia z przełącznika), inaczej w pierwszym pasującym języku przeglądarki, a gdy żaden nie pasuje,
+po polsku; teksty po polsku, angielsku i ukraińsku są w `warning` w `src/main.rs`. Przy wersji oficjalnej skrypt jest pusty, tak samo
 dla zalogowanej sesji, która login i hasło już podała. Serwer nie startuje, gdy wynik `build.rs` wygląda na
 podmieniony albo gdy skrypt ostrzeżenia (`src/warning.js`, wkompilowany w serwer) go nie pokazuje.
 
@@ -208,6 +210,17 @@ sprawdza `sw.js`, który każdy build stempluje innym hashem. Gdy nowa wersja je
 "Zaktualizuj", a przy następnym powrocie do aplikacji przeładowuje się ona sama. Pisana wiadomość wstrzymuje oba
 aż do wysłania albo porzucenia.
 Serwer wysyła `index.html` z `Cache-Control: no-cache`, żeby przeglądarka nie uruchamiała starej wersji z własnej pamięci.
+
+## Język
+
+Interfejs jest po polsku, angielsku albo ukraińsku: przełącznik na ekranie logowania i w "Ustawieniach" (`lang` w
+`localStorage`), domyślnie polski. Zmiana wczytuje stronę od nowa. Daty i liczby mają format wybranego języka. Dane z
+Librusa (przedmioty, kategorie, wiadomości, ogłoszenia, rodzaje frekwencji) zostają w języku szkoły, tak samo
+powiadomienia, które składa serwer, i wersja demo z przykładowymi danymi. Ostrzeżenie o wersji nieoficjalnej ma
+własne tłumaczenia w serwerze (zob. "Zgodność z oficjalnym repozytorium"). Teksty
+przechodzą przez `t()` i `plural()` z `web/src/i18n.js`: kluczem jest tekst polski, a brakujące tłumaczenie pokazuje
+polski. `node web/src/i18n/check.mjs` (także w CI) sprawdza, że każdy tekst z kodu ma tłumaczenie w
+`web/src/i18n/en.js` i `uk.js` z tymi samymi `{zmiennymi}` i że w słownikach nie ma nieużywanych.
 
 ## Testy
 

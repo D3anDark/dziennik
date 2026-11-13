@@ -1,6 +1,7 @@
 <script>
   import { fmtDay, fmtDate } from './util.js';
   import Rich from './Rich.svelte';
+  import { t } from './i18n.js';
 
   /** Calendar entries from `monthEvents()`, grouped under their start day. `flat` drops the card of each day, for use inside a panel. */
   let { events, today, flat = false } = $props();
@@ -24,7 +25,7 @@
         <li class={e.kind}>
           <strong>{e.title}</strong>
           <small class="muted">
-            {[e.to && `do ${fmtDate(e.to)}`, e.when, e.who].filter(Boolean).join(' · ')}
+            {[e.to && t('do {date}', { date: fmtDate(e.to) }), e.when, e.who].filter(Boolean).join(' · ')}
           </small>
           {#if e.detail}<Rich text={e.detail} />{/if}
         </li>

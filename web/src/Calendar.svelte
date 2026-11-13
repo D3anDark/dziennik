@@ -6,12 +6,13 @@
   import { swipe } from './swipe.js';
   import Async from './Async.svelte';
   import Events from './Events.svelte';
+  import { t, locale } from './i18n.js';
 
   let { login } = $props();
 
-  const t = today();
-  const now = { y: Number(t.slice(0, 4)), m: Number(t.slice(5, 7)) };
-  const WEEKDAYS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
+  const todayIso = today();
+  const now = { y: Number(todayIso.slice(0, 4)), m: Number(todayIso.slice(5, 7)) };
+  const WEEKDAYS = [t('Pn'), t('Wt'), t('Śr'), t('Cz'), t('Pt'), t('So'), t('Nd')];
   /** Entries named inside a day's cell; the rest of them counted. */
   const IN_CELL = 2;
   /** Days in the list until asked for more. */
@@ -26,7 +27,7 @@
     picked;
     return false;
   });
-  const label = $derived(new Date(month.y, month.m - 1, 1).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' }));
+  const label = $derived(new Date(month.y, month.m - 1, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' }));
 
   function move(delta) {
     const d = new Date(month.y, month.m - 1 + delta, 1);
@@ -42,9 +43,9 @@
     const both = await Promise.all([monthEvents(login, now.y, now.m), monthEvents(login, next.getFullYear(), next.getMonth() + 1)]);
     // An entry spanning both months comes in both answers.
     const all = [...new Map(both.flat().map((e) => [e.id, e])).values()];
-    return all.filter((e) => (e.to || e.date) >= t).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).slice(0, 3);
+    return all.filter((e) => (e.to || e.date) >= todayIso).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).slice(0, 3);
   }
-  const soon = resource(soonest, () => `soon/${login}/${t}`);
+  const soon = resource(soonest, () => `soon/${login}/${todayIso}`);
 
   const covers = (e, d) => e.date <= d && d <= (e.to || e.date);
   const days = $derived.by(() => {
@@ -64,10 +65,10 @@
 
   /** "Dziś", "Jutro", "pt 14 lis"; an entry under way since before today, by its end. */
   function when(e) {
-    if (e.date < t) return `do ${fmtDate(e.to)}`;
-    if (e.date === t) return 'Dziś';
-    if (e.date === shift(t, 1)) return 'Jutro';
-    return `${parse(e.date).toLocaleDateString('pl-PL', { weekday: 'short' }).replace('.', '')} ${fmtDate(e.date)}`;
+    if (e.date < todayIso) return t('do {date}', { date: fmtDate(e.to) });
+    if (e.date === todayIso) return t('Dziś');
+    if (e.date === shift(todayIso, 1)) return t('Jutro');
+    return `${parse(e.date).toLocaleDateString(locale, { weekday: 'short' }).replace('.', '')} ${fmtDate(e.date)}`;
   }
 
   let below = $state();
@@ -78,7 +79,7 @@
 
   /** A tile opens its day in the calendar, or today for an entry already under way. */
   function show(e) {
-    const d = e.date < t ? t : e.date;
+    const d = e.date < todayIso ? todayIso : e.date;
     month = { y: Number(d.slice(0, 4)), m: Number(d.slice(5, 7)) };
     picked = d;
   }
@@ -87,13 +88,13 @@
 <div class="panels cal">
   <div class="col">
     <section class="soon" aria-labelledby="soon-title">
-      <h2 id="soon-title" class="section">Najbliższe</h2>
-      <Async r={soon} empty="Nic zaplanowanego.">
+      <h2 id="soon-title" class="section">{t('Najbliższe')}</h2>
+      <Async r={soon} empty={t('Nic zaplanowanego.')}>
         {#snippet children(list)}
           <ul>
             {#each list as e (e.id)}
               <li>
-                <button onclick={() => show(e)} aria-label="{fmtDay(e.date < t ? t : e.date)}: {e.title}">
+                <button onclick={() => show(e)} aria-label="{fmtDay(e.date < todayIso ? todayIso : e.date)}: {e.title}">
                   <small><span class="mark {e.kind}"></span>{when(e)}</small>
                   <strong>{e.title}</strong>
                 </button>
@@ -105,17 +106,17 @@
     </section>
 
     <div class="pager">
-      <button class="icon-btn" onclick={() => move(-1)} aria-label="Poprzedni miesiąc" title="Poprzedni miesiąc"><Icon name="left" /></button>
+      <button class="icon-btn" onclick={() => move(-1)} aria-label={t('Poprzedni miesiąc')} title={t('Poprzedni miesiąc')}><Icon name="left" /></button>
       <h2 class="range" aria-live="polite">{label}</h2>
-      <button class="icon-btn" onclick={() => move(1)} aria-label="Następny miesiąc" title="Następny miesiąc"><Icon name="right" /></button>
-      <button class="secondary now" onclick={() => ((month = now), (picked = null))} disabled={month.y === now.y && month.m === now.m && !picked}>Dziś</button>
+      <button class="icon-btn" onclick={() => move(1)} aria-label={t('Następny miesiąc')} title={t('Następny miesiąc')}><Icon name="right" /></button>
+      <button class="secondary now" onclick={() => ((month = now), (picked = null))} disabled={month.y === now.y && month.m === now.m && !picked}>{t('Dziś')}</button>
     </div>
 
     <section class="card month" use:swipe={{ prev: () => move(-1), next: () => move(1) }}>
       <div class="weekdays" aria-hidden="true">
         {#each WEEKDAYS as w (w)}<span>{w}</span>{/each}
       </div>
-      <div class="grid" role="group" aria-label="Dni miesiąca">
+      <div class="grid" role="group" aria-label={t('Dni miesiąca')}>
         {#each { length: lead }}<span></span>{/each}
         {#each days as d (d)}
           {@const list = byDay.get(d)}
@@ -123,7 +124,7 @@
             class:free={list.some((e) => e.kind === 'free')}
             class:weekend={parse(d).getDay() % 6 === 0}
             aria-pressed={d === picked}
-            aria-current={d === t ? 'date' : undefined}
+            aria-current={d === todayIso ? 'date' : undefined}
             aria-label={dayLabel(d, list)}
             title={list.map((e) => e.title).join('\n') || undefined}
             onclick={() => (picked = d === picked ? null : d)}
@@ -140,21 +141,21 @@
 
   <div class="col">
     {#if picked}
-      <p><button class="link" onclick={() => (picked = null)}><Icon name="left" size={18} />Cały miesiąc</button></p>
+      <p><button class="link" onclick={() => (picked = null)}><Icon name="left" size={18} />{t('Cały miesiąc')}</button></p>
     {/if}
     <div class="swipe" bind:this={below} use:swipe={{ prev: () => move(-1), next: () => move(1) }}>
-      <Async r={events} empty="Brak wpisów w tym miesiącu.">
+      <Async r={events} empty={t('Brak wpisów w tym miesiącu.')}>
         {#snippet children(list)}
           {@const shown = picked ? list.filter((e) => covers(e, picked)) : list}
           {#if shown.length}
             {@const firsts = new Set([...new Set(shown.map((e) => e.date))].slice(0, IN_LIST))}
             {@const cut = all ? shown : shown.filter((e) => firsts.has(e.date))}
-            <Events events={cut} today={t} />
+            <Events events={cut} today={todayIso} />
             {#if cut.length < shown.length}
-              <button class="secondary wide" onclick={() => (all = true)}>Pokaż więcej</button>
+              <button class="secondary wide" onclick={() => (all = true)}>{t('Pokaż więcej')}</button>
             {/if}
           {:else}
-            <p class="center muted">Tego dnia nic nie ma.</p>
+            <p class="center muted">{t('Tego dnia nic nie ma.')}</p>
           {/if}
         {/snippet}
       </Async>

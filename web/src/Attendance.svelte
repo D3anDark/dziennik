@@ -2,6 +2,7 @@
   import { synergia, lookup, resource, byId } from './api.svelte.js';
   import { fmtDate, fmtPercent, choiceOf, ATTENDANCE } from './util.js';
   import Async from './Async.svelte';
+  import { t } from './i18n.js';
 
   let { login } = $props();
 
@@ -15,18 +16,18 @@
   const pct = (absent, all) => (all ? fmtPercent((all - absent) / all) : '');
 
   async function load(login) {
-    const [a, t, ls, s] = await Promise.all([
+    const [a, ty, ls, s] = await Promise.all([
       synergia(login, 'Attendances'),
       lookup(login, 'Attendances/Types'),
       lookup(login, 'Lessons'),
       lookup(login, 'Subjects'),
     ]);
-    const [types, lessons, subjects] = [byId(t.Types), byId(ls.Lessons), byId(s.Subjects)];
+    const [types, lessons, subjects] = [byId(ty.Types), byId(ls.Lessons), byId(s.Subjects)];
     const all = (a.Attendances ?? []).map((x) => {
       const type = types.get(String(x.Type?.Id));
       const std = Number(type ? (type.Standard ? type.Id : type.StandardType?.Id) : x.Type?.Id);
-      const subject = subjects.get(String(lessons.get(String(x.Lesson?.Id))?.Subject?.Id))?.Name ?? 'Inne';
-      return { id: x.Id, date: x.Date, no: x.LessonNo, std, subject, name: type?.Name ?? 'Nieznany', short: type?.Short ?? '?' };
+      const subject = subjects.get(String(lessons.get(String(x.Lesson?.Id))?.Subject?.Id))?.Name ?? t('Inne');
+      return { id: x.Id, date: x.Date, no: x.LessonNo, std, subject, name: type?.Name ?? t('Nieznany'), short: type?.Short ?? '?' };
     });
     const entries = all
       .filter((x) => x.std !== PRESENCE)
@@ -65,8 +66,8 @@
 <Async r={data}>
   {#snippet children(d)}
     <section class="card">
-      <h2>Podsumowanie</h2>
-      {#if d.total}<p class="figure"><strong>{d.total}</strong> obecności</p>{/if}
+      <h2>{t('Podsumowanie')}</h2>
+      {#if d.total}<p class="figure"><strong>{d.total}</strong> {t('obecności')}</p>{/if}
       <ul class="totals">
         {#each d.kinds as k (k.std)}
           <li>
@@ -75,18 +76,18 @@
           </li>
         {/each}
       </ul>
-      {#if !d.total}<p class="muted">Brak wpisów frekwencji.</p>{/if}
+      {#if !d.total}<p class="muted">{t('Brak wpisów frekwencji.')}</p>{/if}
     </section>
     {#if d.subjects.length}
       <section class="card">
-        <h2>Obecność na przedmiotach</h2>
+        <h2>{t('Obecność na przedmiotach')}</h2>
         <ul class="totals">
           {#each d.subjects as s (s.name)}
             <li>
               <span>{s.name}</span>
               <span class="muted">
-                {#if s.unexcused}<span class="alert">{s.unexcused} nieuspr.</span>{/if}
-                {#if s.excused}<span>{s.excused} uspr.</span>{/if}
+                {#if s.unexcused}<span class="alert">{t('{n} nieuspr.', { n: s.unexcused })}</span>{/if}
+                {#if s.excused}<span>{t('{n} uspr.', { n: s.excused })}</span>{/if}
                 <span class="pct">{s.pct}</span>
               </span>
             </li>
@@ -96,11 +97,11 @@
     {/if}
     {#if d.entries.length}
       <section class="card">
-        <h2>Wpisy</h2>
+        <h2>{t('Wpisy')}</h2>
         {#if d.kinds.filter((k) => k.n).length > 1}
           <!-- No counts (the summary above has them); words shortened on a phone and a tablet, so the usual kinds fit one row. -->
-          <div class="segmented filter" role="group" aria-label="Rodzaj wpisu">
-            <button aria-pressed={only === null} onclick={() => (only = null)}>Wszystkie</button>
+          <div class="segmented filter" role="group" aria-label={t('Rodzaj wpisu')}>
+            <button aria-pressed={only === null} onclick={() => (only = null)}>{t('Wszystkie')}</button>
             {#each d.kinds.filter((k) => k.n) as k (k.std)}
               <button aria-pressed={only === k.std} aria-label={k.word ? `${k.word}, ${k.label}` : undefined} title={k.label} onclick={() => (only = k.std)}
                 >{#if k.word}<span class="narrow">{k.word}</span><span class="wide">{k.label}</span>{:else}{k.label}{/if}</button
@@ -112,7 +113,7 @@
           {#each only === null ? d.entries : d.entries.filter((e) => e.std === only) as e (e.id)}
             <li>
               <span class="chip static {tone(e.std)}" title={e.name}>{e.short}</span>
-              <span>{e.subject}<small class="muted">{fmtDate(e.date)}, lekcja {e.no}</small></span>
+              <span>{e.subject}<small class="muted">{fmtDate(e.date)}, {t('lekcja {no}', { no: e.no })}</small></span>
               <span class="vh">{e.name}</span>
             </li>
           {/each}

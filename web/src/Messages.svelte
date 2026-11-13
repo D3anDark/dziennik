@@ -9,6 +9,7 @@
   import Icon from './Icon.svelte';
   import Compose from './Compose.svelte';
   import Files from './Files.svelte';
+  import { t } from './i18n.js';
 
   /** `arg` from the route: `<id>` opens a message, `nowa` writes one, `nowa/<id>` answers <id>. */
   let { login, arg } = $props();
@@ -51,7 +52,7 @@
         const sent = flag(m.inSended);
         return {
           id: m.Id,
-          title: plain(m.Subject) || '(bez tematu)',
+          title: plain(m.Subject) || t('(bez tematu)'),
           who: sent
             ? (m.Receiver ?? []).map((x) => person(users.get(String(x.Id)))).join(', ')
             : person(users.get(String(m.Sender?.Id))),
@@ -89,7 +90,7 @@
     const users = await people(login, [m.Sender?.Id, ...(m.Receivers ?? []).map((x) => x.Id)]);
     refreshUnread(login);
     return {
-      title: plain(m.Subject) || '(bez tematu)',
+      title: plain(m.Subject) || t('(bez tematu)'),
       from: person(users.get(String(m.Sender?.Id))),
       to: (m.Receivers ?? []).map((x) => person(users.get(String(x.Id)))).join(', '),
       date: m.SendDate,
@@ -153,18 +154,18 @@
     {/snippet}
   </Async>
 {:else if id}
-  <p><a class="back" href="#/wiadomosci"><Icon name="left" size={18} />Wiadomości</a></p>
+  <p><a class="back" href="#/wiadomosci"><Icon name="left" size={18} />{t('Wiadomości')}</a></p>
   <!-- The subject names the view; until the message is in it is just a message. -->
-  <h1 class="title" tabindex="-1">{(!Array.isArray(data.data) && data.data?.title) || 'Wiadomość'}</h1>
-  {#if sentId === id}<p class="toast" role="status">Wiadomość wysłana.</p>{/if}
+  <h1 class="title" tabindex="-1">{(!Array.isArray(data.data) && data.data?.title) || t('Wiadomość')}</h1>
+  {#if sentId === id}<p class="toast" role="status">{t('Wiadomość wysłana.')}</p>{/if}
   <Async r={data}>
     {#snippet children(m)}
       <article class="card message">
         <div class="meta">
           <span class="avatar small" aria-hidden="true">{initials(m.from || m.to)}</span>
           <p>
-            {#if m.from}Od: <strong>{m.from}</strong><br />{/if}
-            <span class="muted">{#if m.to}Do: {m.to}<br />{/if}{fmtUnix(m.date)}</span>
+            {#if m.from}{t('Od:')} <strong>{m.from}</strong><br />{/if}
+            <span class="muted">{#if m.to}{t('Do:')} {m.to}<br />{/if}{fmtUnix(m.date)}</span>
           </p>
         </div>
         <Rich text={m.body} />
@@ -173,28 +174,28 @@
         {:else if m.unlisted}
           <p class="note-line muted">
             <Icon name="paperclip" size={18} />
-            <span>Wiadomość ma załączniki, ale Librus nie podaje ich listy. Pobierzesz je w oficjalnej aplikacji Librusa albo na <a href="https://synergia.librus.pl" target="_blank" rel="noopener">synergia.librus.pl</a>.</span>
+            <span>{t('Wiadomość ma załączniki, ale Librus nie podaje ich listy. Pobierzesz je w oficjalnej aplikacji Librusa albo na')} <a href="https://synergia.librus.pl" target="_blank" rel="noopener">synergia.librus.pl</a>.</span>
           </p>
         {/if}
       </article>
       <!-- On the website only a received message (folder 5) has a reply form. -->
-      {#if !fromWeb(id) || id.startsWith('5-')}<div class="dock"><a class="button wide primary" href="#/wiadomosci/nowa/{id}"><Icon name="reply" size={20} />Odpowiedz</a></div>{/if}
+      {#if !fromWeb(id) || id.startsWith('5-')}<div class="dock"><a class="button wide primary" href="#/wiadomosci/nowa/{id}"><Icon name="reply" size={20} />{t('Odpowiedz')}</a></div>{/if}
     {/snippet}
   </Async>
 {:else}
   <div class="toolbar">
-    <div class="segmented" role="group" aria-label="Folder">
-      <button aria-pressed={folder === 'in'} onclick={() => (folder = 'in')}>Odebrane</button>
-      <button aria-pressed={folder === 'out'} onclick={() => (folder = 'out')}>Wysłane</button>
+    <div class="segmented" role="group" aria-label={t('Folder')}>
+      <button aria-pressed={folder === 'in'} onclick={() => (folder = 'in')}>{t('Odebrane')}</button>
+      <button aria-pressed={folder === 'out'} onclick={() => (folder = 'out')}>{t('Wysłane')}</button>
     </div>
-    <a class="button primary" href="#/wiadomosci/nowa"><Icon name="pencil" size={20} /><span>Napisz</span></a>
+    <a class="button primary" href="#/wiadomosci/nowa"><Icon name="pencil" size={20} /><span>{t('Napisz')}</span></a>
   </div>
-  <Async r={data} empty="Brak wiadomości.">
+  <Async r={data} empty={t('Brak wiadomości.')}>
     {#snippet children(list)}
       {@const inFolder = list.filter((m) => m.sent === (folder === 'out'))}
       {@const shown = query ? inFolder.filter((m) => `${m.who} ${m.title}`.toLowerCase().includes(query)) : inFolder}
       {#if inFolder.length}
-        <input class="search" type="search" placeholder="Szukaj nadawcy lub tematu…" aria-label="Szukaj w wiadomościach" autocomplete="off" enterkeyhint="search" bind:value={search} />
+        <input class="search" type="search" placeholder={t('Szukaj nadawcy lub tematu…')} aria-label={t('Szukaj w wiadomościach')} autocomplete="off" enterkeyhint="search" bind:value={search} />
       {/if}
       {@const unreadCount = folder === 'in' ? inFolder.filter(unread).length : 0}
       {#if unreadCount}
@@ -202,20 +203,20 @@
         <div class="list-head">
           <span><strong class="new">{unreadCount}</strong> {plural(unreadCount, ['nieprzeczytana', 'nieprzeczytane', 'nieprzeczytanych'])}</span>
           <button class="link mark-all" disabled={marking} onclick={() => markAll(inFolder)}>
-            <Icon name="check" size={16} />{marking ? 'Oznaczanie…' : 'Oznacz jako przeczytane'}
+            <Icon name="check" size={16} />{marking ? t('Oznaczanie…') : t('Oznacz jako przeczytane')}
           </button>
         </div>
       {/if}
       {#if markError}<p class="error" role="alert">{markError}</p>{/if}
       {#if !shown.length}
-        <p class="center muted" role="status">{query ? 'Brak wiadomości pasujących do wyszukiwania.' : 'Brak wiadomości.'}</p>
+        <p class="center muted" role="status">{query ? t('Brak wiadomości pasujących do wyszukiwania.') : t('Brak wiadomości.')}</p>
       {:else}
         <ul class="card list messages">
           {#each shown as m (m.id)}
             <li class:unread={unread(m)}>
               <a href="#/wiadomosci/{m.id}">
                 <span class="grow">
-                  <span class="who"><span>{folder === 'out' ? 'Do: ' : ''}{m.who}</span></span>
+                  <span class="who"><span>{folder === 'out' ? `${t('Do:')} ` : ''}{m.who}</span></span>
                   <small class="subject">{m.title}</small>
                 </span>
                 <time title={fmtUnix(m.date)}>{ago(m.date)}</time>

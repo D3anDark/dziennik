@@ -1,3 +1,7 @@
+import { locale, t } from './i18n.js';
+
+export { plural } from './i18n.js';
+
 const pad = (n) => String(n).padStart(2, '0');
 
 /** Local-date strings (YYYY-MM-DD) everywhere: Librus dates carry no zone and mean school-local days. */
@@ -14,7 +18,7 @@ export const shift = (s, days) => {
 export const today = () => iso(new Date());
 export const mondayOf = (s) => shift(s, -((parse(s).getDay() + 6) % 7));
 
-export const fmtDay = (s) => parse(s).toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
+export const fmtDay = (s) => parse(s).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' });
 /** The school year a date belongs to, September to August, by the year it starts in. */
 const schoolYear = (d) => d.getFullYear() - (d.getMonth() < 8);
 /** "14 paź"; the year only for a date outside the current school year. */
@@ -22,22 +26,23 @@ export function fmtDate(s) {
   if (!s) return '';
   const d = parse(s);
   const year = schoolYear(d) !== schoolYear(new Date()) ? { year: 'numeric' } : {};
-  return d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', ...year });
+  return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', ...year });
 }
-/** How long ago, in the words a list of news uses: "9 min", "3 godz.", "wczoraj", then the date. */
-export function ago(t) {
-  const then = new Date(Number(t) * 1000);
+/** How long ago, in the words a list of news uses: "9 min", "3 godz.", "wczoraj", then the date; `past` adds "temu". */
+export function ago(unix, past = false) {
+  const then = new Date(Number(unix) * 1000);
   const minutes = Math.floor((Date.now() - then) / 60000);
-  if (minutes < 1) return 'teraz';
-  if (minutes < 60) return `${minutes} min`;
-  if (iso(then) === today()) return `${Math.floor(minutes / 60)} godz.`;
-  if (iso(then) === shift(today(), -1)) return 'wczoraj';
-  return then.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', ...(then.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }) });
+  if (minutes < 1) return t('teraz');
+  if (minutes < 60) return past ? t('{n} min temu', { n: minutes }) : t('{n} min', { n: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (iso(then) === today()) return past ? t('{n} godz. temu', { n: hours }) : t('{n} godz.', { n: hours });
+  if (iso(then) === shift(today(), -1)) return t('wczoraj');
+  return then.toLocaleDateString(locale, { day: 'numeric', month: 'short', ...(then.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }) });
 }
 
-const percent = new Intl.NumberFormat('pl-PL', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const hundredths = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-/** "60,0%": Polish writes a decimal comma. */
+const percent = new Intl.NumberFormat(locale, { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const hundredths = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** "60,0%": Polish writes a decimal comma, the locale decides. */
 export const fmtPercent = (ratio) => percent.format(ratio);
 /** "4,67" */
 export const fmtAverage = (v) => hundredths.format(v);
@@ -52,12 +57,8 @@ export const worth = (v, plus = 0.5, minus = 0.25) => {
   return n >= 1 && n <= 6 && !String(v).includes('%') ? n + (String(v).endsWith('+') ? plus : String(v).endsWith('-') ? -minus : 0) : null;
 };
 
-const plurals = new Intl.PluralRules('pl-PL');
-/** The word that goes with `n`: forms for 1, for 2–4 (22–24…) and for 5 and on, e.g. wiadomość, wiadomości, wiadomości. */
-export const plural = (n, [one, few, many]) => ({ one, few })[plurals.select(n)] ?? many;
-
-export const fmtUnix = (t) =>
-  new Date(Number(t) * 1000).toLocaleString('pl-PL', { dateStyle: 'medium', timeStyle: 'short' });
+export const fmtUnix = (unix) =>
+  new Date(Number(unix) * 1000).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
 
 /** Two letters for an avatar: first and last word of a name. */
 export function initials(name) {
@@ -109,7 +110,7 @@ export const MINUS = { key: 'minus-worth', options: ['0.25', '0.33', '0.5', '0']
 export const YEAR = { key: 'year-average', options: ['all', 'halves'] };
 
 /** The tints a mark can take (app.css), with their names: the grade scale's and the one blue. */
-export const TONES = [['g1', 'czerwony'], ['g2', 'pomarańczowy'], ['g3', 'żółty'], ['g4', 'limonkowy'], ['g5', 'zielony'], ['blue', 'niebieski'], ['g0', 'szary']];
+export const TONES = [['g1', t('czerwony')], ['g2', t('pomarańczowy')], ['g3', t('żółty')], ['g4', t('limonkowy')], ['g5', t('zielony')], ['blue', t('niebieski')], ['g0', t('szary')]];
 
 /**
  * The standard kinds of attendance entry that are not plain presence, by Synergia's id and in the order they are
@@ -118,10 +119,10 @@ export const TONES = [['g1', 'czerwony'], ['g2', 'pomarańczowy'], ['g3', 'żó�
  */
 export const ATTENDANCE = new Map(
   [
-    [1, 'Nieusprawiedliwione', 'Nieuspr.', 'nb', 'g1'],
-    [3, 'Usprawiedliwione', 'Uspr.', 'u', 'g5'],
-    [2, 'Spóźnienia', 'Spóźn.', 'sp', 'blue'],
-    [4, 'Zwolnienia', 'Zwoln.', 'zw', 'g3'],
+    [1, t('Nieusprawiedliwione'), t('Nieuspr.'), 'nb', 'g1'],
+    [3, t('Usprawiedliwione'), t('Uspr.'), 'u', 'g5'],
+    [2, t('Spóźnienia'), t('Spóźn.'), 'sp', 'blue'],
+    [4, t('Zwolnienia'), t('Zwoln.'), 'zw', 'g3'],
   ].map(([std, label, word, sample, tone]) => [std, { label, word, sample, key: `attendance-tone/${std}`, options: [tone, ...TONES.map(([t]) => t).filter((t) => t !== tone)] }]),
 );
 
@@ -182,7 +183,7 @@ export function named(first, last) {
   return [f, short && f && l ? `${[...l][0]}.` : l].filter(Boolean).join(' ');
 }
 
-export const person = (u) => named(u?.FirstName, u?.LastName) || 'Nieznany';
+export const person = (u) => named(u?.FirstName, u?.LastName) || t('Nieznany');
 
 /** A name written first name first, as an account's student is: "Zuzanna Kowalczyk" is "Zuzanna K." in screenshot mode. */
 export const alias = (name) => (short ? String(name).replace(/\s+(\S)\S*$/u, ' $1.') : name);
@@ -225,6 +226,6 @@ export function plain(s) {
 
 /** Splits text so http(s) URLs can be rendered as links; odd indices are URLs. */
 /** "sala 104", kept on one line, and a room the school already named "sala gim." as it is. */
-export const room = (name) => (/^sala\b/i.test(name) ? name : `sala\u00a0${name}`);
+export const room = (name) => (/^sala\b/i.test(name) ? name : t('sala\u00a0{name}', { name }));
 
 export const linkParts = (text) => text.split(/(https?:\/\/[^\s<>"]+)/);

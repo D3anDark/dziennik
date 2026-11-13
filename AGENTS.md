@@ -13,6 +13,9 @@ pełny opis widoków, powiadomień, wyglądu i testów w `docs/szczegoly.md`; tu
 - Zawsze: `cargo test` i `cargo clippy --all-targets -- -D warnings` (to samo uruchamia CI).
 - Zmiana w `web/`: `cd web && CHROME=/ścieżka/do/chromium npm run e2e`, a dla widoków także
   `npm run demo && CHROME=... e2e/demo.sh`. Nowa trasa API dostaje odpowiedź w `web/e2e/mock.py` i `web/src/demo.js`.
+- Nowy albo zmieniony tekst interfejsu idzie przez `t()` (`plural()` dla odmiany przez liczbę) i dostaje tłumaczenie
+  w `web/src/i18n/en.js` i `uk.js`; `cd web && node src/i18n/check.mjs` wypisuje braki. Zmiana polskiego tekstu w
+  `Privacy.svelte` wymaga tej samej zmiany w obu tłumaczeniach.
 
 ## Zgodność z oficjalnym repozytorium
 
@@ -29,8 +32,8 @@ pełny opis widoków, powiadomień, wyglądu i testów w `docs/szczegoly.md`; tu
     `src/warning.js` nie zawiera tekstu ostrzeżenia (plik jest wkompilowany: usunięty zatrzymuje budowanie);
   - `inject` i `warning_js` w `src/main.rs`: znacznik skryptu trafia do każdej strony przy każdej wersji, a strony
     idą zawsze w całości (bez 304), żeby przeglądarka nie trzymała kopii bez niego.
-- Tekst ostrzeżeń jest ustalony przez właściciela projektu (`warning` w `src/main.rs`); zmieniaj go tylko na jego
-  prośbę.
+- Tekst ostrzeżeń jest ustalony przez właściciela projektu (`warning` w `src/main.rs`, po polsku, angielsku i
+  ukraińsku); zmieniaj go tylko na jego prośbę, we wszystkich trzech językach naraz.
 - Aplikacja pokazuje wyłącznie ostrzeżenie, gdy wersja nie jest oficjalna. Plakietka "wersja oficjalna" albo
   "zweryfikowano" byłaby fałszywą gwarancją: serwer mówi sam o sobie i zmieniony serwer może kłamać.
 - `REPO` w `src/main.rs` zmienia się tylko wtedy, gdy oficjalne repozytorium się przenosi.

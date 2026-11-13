@@ -1,6 +1,7 @@
 <script>
   import { message } from './api.svelte.js';
   import Icon from './Icon.svelte';
+  import { t } from './i18n.js';
 
   /**
    * Attachments of a message or a homework assignment. `link(file)` asks Librus where the file is and resolves to
@@ -28,7 +29,7 @@
 <ul class="files">
   {#each files as f, i (f.Id)}
     <li>
-      <button class="link" onclick={() => open(f)}><Icon name="paperclip" size={18} />{f.Name || `Załącznik ${i + 1}`}</button>
+      <button class="link" onclick={() => open(f)}><Icon name="paperclip" size={18} />{f.Name || t('Załącznik {n}', { n: i + 1 })}</button>
     </li>
   {/each}
 </ul>

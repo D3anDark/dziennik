@@ -5,6 +5,7 @@
   import { supported, current, enable } from './push.js';
   import Icon from './Icon.svelte';
   import Install from './Install.svelte';
+  import { t } from './i18n.js';
 
   /**
    * The first-start tour: step by step it lights up each part of the app and says what it is for, then offers to
@@ -13,28 +14,28 @@
    * middle of the screen, and a step with no place on screen, or whose `when` says no, is left out.
    */
   const STEPS = [
-    { at: [null], title: 'Witaj w\u00a0Dzienniku', text: 'Pokażę w\u00a0kilku krokach, gdzie co jest i\u00a0jak z\u00a0tego korzystać.' },
-    { at: ['.tabs a[href="#/start"]', '.side a[href="#/start"]'], title: 'Start', text: 'Dzisiejsze lekcje, nowe oceny, najbliższe terminy i\u00a0ostatnie zmiany na jednym ekranie.' },
-    { at: ['.tabs a[href="#/oceny"]', '.side a[href="#/oceny"]'], title: 'Oceny', text: 'Oceny ze wszystkich przedmiotów. Nowe są wyróżnione, a\u00a0po wybraniu oceny widać jej szczegóły.' },
-    { at: ['.tabs a[href="#/plan"]', '.side a[href="#/plan"]'], title: 'Plan', text: 'Lekcje na dziś albo na cały tydzień, z\u00a0zastępstwami i\u00a0odwołanymi lekcjami.' },
-    { at: ['.tabs a[href="#/wiadomosci"]', '.side a[href="#/wiadomosci"]'], title: 'Wiadomości', text: 'Wiadomości ze szkoły. Tu też napiszesz nową i\u00a0odpowiesz.' },
-    { at: ['.tabs a[href="#/wiecej"]'], title: 'Więcej', text: 'Reszta dziennika: frekwencja, terminarz, zadania domowe, tematy lekcji, ogłoszenia, uwagi i\u00a0zachowanie. Niżej konto: powiadomienia, ustawienia, prywatność, zgłaszanie błędów i\u00a0wylogowanie.' },
-    { at: ['.side nav'], title: 'Reszta dziennika', text: 'Frekwencja, terminarz, zadania domowe, tematy lekcji, ogłoszenia, uwagi i\u00a0zachowanie. Niżej konto: powiadomienia i\u00a0prywatność, a\u00a0na dole ustawienia.' },
-    { at: ['.bar .picker', '.bar .student', '.side .accounts'], title: 'Uczeń', text: 'Tu widać, czyj dziennik oglądasz. Gdy uczniów jest kilku, tu ich przełączasz.' },
-    { at: ['.bar [aria-label="Odśwież"]', '.side [aria-label="Odśwież"]'], title: 'Odświeżanie', text: 'Pobiera najnowsze dane z\u00a0Librusa.' },
-    { at: ['.side .me [aria-label="Zgłoś błąd"]'], title: 'Zgłoś błąd', text: 'Coś nie działa? Tu otworzysz formularz zgłoszenia. Jest publiczny, więc nie wpisuj w\u00a0nim danych ze szkoły.' },
+    { at: [null], title: t('Witaj w\u00a0Dzienniku'), text: t('Pokażę w\u00a0kilku krokach, gdzie co jest i\u00a0jak z\u00a0tego korzystać.') },
+    { at: ['.tabs a[href="#/start"]', '.side a[href="#/start"]'], title: t('Start'), text: t('Dzisiejsze lekcje, nowe oceny, najbliższe terminy i\u00a0ostatnie zmiany na jednym ekranie.') },
+    { at: ['.tabs a[href="#/oceny"]', '.side a[href="#/oceny"]'], title: t('Oceny'), text: t('Oceny ze wszystkich przedmiotów. Nowe są wyróżnione, a\u00a0po wybraniu oceny widać jej szczegóły.') },
+    { at: ['.tabs a[href="#/plan"]', '.side a[href="#/plan"]'], title: t('Plan'), text: t('Lekcje na dziś albo na cały tydzień, z\u00a0zastępstwami i\u00a0odwołanymi lekcjami.') },
+    { at: ['.tabs a[href="#/wiadomosci"]', '.side a[href="#/wiadomosci"]'], title: t('Wiadomości'), text: t('Wiadomości ze szkoły. Tu też napiszesz nową i\u00a0odpowiesz.') },
+    { at: ['.tabs a[href="#/wiecej"]'], title: t('Więcej'), text: t('Reszta dziennika: frekwencja, terminarz, zadania domowe, tematy lekcji, ogłoszenia, uwagi i\u00a0zachowanie. Niżej konto: powiadomienia, ustawienia, prywatność, zgłaszanie błędów i\u00a0wylogowanie.') },
+    { at: ['.side nav'], title: t('Reszta dziennika'), text: t('Frekwencja, terminarz, zadania domowe, tematy lekcji, ogłoszenia, uwagi i\u00a0zachowanie. Niżej konto: powiadomienia i\u00a0prywatność, a\u00a0na dole ustawienia.') },
+    { at: ['.bar .picker', '.bar .student', '.side .accounts'], title: t('Uczeń'), text: t('Tu widać, czyj dziennik oglądasz. Gdy uczniów jest kilku, tu ich przełączasz.') },
+    { at: [`.bar [aria-label="${t('Odśwież')}"]`, `.side [aria-label="${t('Odśwież')}"]`], title: t('Odświeżanie'), text: t('Pobiera najnowsze dane z\u00a0Librusa.') },
+    { at: [`.side .me [aria-label="${t('Zgłoś błąd')}"]`], title: t('Zgłoś błąd'), text: t('Coś nie działa? Tu otworzysz formularz zgłoszenia. Jest publiczny, więc nie wpisuj w\u00a0nim danych ze szkoły.') },
     {
       at: ['.side-foot .nav-row', '.tabs a[href="#/wiecej"]', null],
-      title: 'Zainstaluj aplikację',
-      text: 'Będzie na ekranie jak każda inna aplikacja, bez paska przeglądarki. Na iPhonie i\u00a0iPadzie dopiero wtedy działają powiadomienia. Później znajdziesz to tutaj.',
+      title: t('Zainstaluj aplikację'),
+      text: t('Będzie na ekranie jak każda inna aplikacja, bez paska przeglądarki. Na iPhonie i\u00a0iPadzie dopiero wtedy działają powiadomienia. Później znajdziesz to tutaj.'),
       when: () => Boolean(install.event) || byHand || android,
       action: 'install',
     },
     {
       at: ['.side a[href="#/powiadomienia"]', '.tabs a[href="#/wiecej"]', null],
-      title: 'Powiadomienia',
+      title: t('Powiadomienia'),
       // The same terms as the Powiadomienia page: turning them on here keeps a copy of the Librus access on the server.
-      text: 'Aplikacja da znać o\u00a0nowych ocenach, nieobecnościach, uwagach, wiadomościach i\u00a0zmianach w\u00a0planie, także gdy jest zamknięta. Serwer trzyma wtedy kopię Twojego dostępu do Librusa i\u00a0historię zmian. Wyłączenie powiadomień na ostatnim urządzeniu usuwa jedno i\u00a0drugie. Później zmienisz to tutaj.',
+      text: t('Aplikacja da znać o\u00a0nowych ocenach, nieobecnościach, uwagach, wiadomościach i\u00a0zmianach w\u00a0planie, także gdy jest zamknięta. Serwer trzyma wtedy kopię Twojego dostępu do Librusa i\u00a0historię zmian. Wyłączenie powiadomień na ostatnim urządzeniu usuwa jedno i\u00a0drugie. Później zmienisz to tutaj.'),
       when: (pushOff) => pushOff,
       action: 'push',
     },
@@ -144,7 +145,7 @@
       <div class="spot" style:top="{spot.top}px" style:left="{spot.left}px" style:width="{spot.width}px" style:height="{spot.height}px"></div>
       <div class="step" style:width="{width}px" style:left="{card.left}px" style:top={card.top} style:bottom={card.bottom} style:translate={card.translate}>
         <div aria-live="polite">
-          <small class="muted">{i + 1} z&nbsp;{steps.length}</small>
+          <small class="muted">{t('{i} z\u00a0{n}', { i: i + 1, n: steps.length })}</small>
           <h2 id="tour-title">{step.title}</h2>
           <p id="tour-text">{step.text}</p>
         </div>
@@ -152,16 +153,16 @@
           <Install />
         {:else if step.action === 'push'}
           {#if push.on}
-            <p class="note-line"><Icon name="done" size={18} />Włączone.</p>
+            <p class="note-line"><Icon name="done" size={18} />{t('Włączone.')}</p>
           {:else}
-            <button class="secondary wide" disabled={push.busy} onclick={enablePush}><Icon name="bell" size={20} />Włącz powiadomienia</button>
+            <button class="secondary wide" disabled={push.busy} onclick={enablePush}><Icon name="bell" size={20} />{t('Włącz powiadomienia')}</button>
           {/if}
           {#if push.error}<p class="error" role="alert">{push.error}</p>{/if}
         {/if}
         <div class="actions">
-          {#if !last}<button class="link" onclick={() => dialog.close()}>Pomiń</button>{/if}
-          {#if i}<button onclick={() => go(i - 1)}>Wstecz</button>{/if}
-          <button class="primary" bind:this={primary} onclick={() => (last ? dialog.close() : go(i + 1))}>{last ? 'Zaczynamy' : i ? 'Dalej' : 'Pokaż'}</button>
+          {#if !last}<button class="link" onclick={() => dialog.close()}>{t('Pomiń')}</button>{/if}
+          {#if i}<button onclick={() => go(i - 1)}>{t('Wstecz')}</button>{/if}
+          <button class="primary" bind:this={primary} onclick={() => (last ? dialog.close() : go(i + 1))}>{last ? t('Zaczynamy') : i ? t('Dalej') : t('Pokaż')}</button>
         </div>
       </div>
     {/if}

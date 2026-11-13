@@ -1,6 +1,7 @@
 <script module>
   import { clock } from './api.svelte.js';
   import { named } from './util.js';
+  import { t } from './i18n.js';
 
   /**
    * The time of day, "HH:MM": read again on refresh, on coming back to the app (`clock`) and, while `on()`, as each
@@ -22,7 +23,7 @@
     };
   }
 
-  export const teacher = (t) => (t ? named(t.FirstName, t.LastName) : '');
+  export const teacher = (u) => (u ? named(u.FirstName, u.LastName) : '');
 
   /** A subject's hue, the same on every day: its id spread round the wheel by the golden angle, squeezed short of red (a cancellation's). */
   export function hue(s) {
@@ -33,7 +34,7 @@
 
   /** A school's own category name ("zapowiedziane kartkówki") as the kind of test it is; any other, capitalised. */
   export const kind = (c) =>
-    /kartk/i.test(c) ? 'Kartkówka' : /sprawdzian|klasówk|praca klasowa/i.test(c) ? 'Sprawdzian' : c.charAt(0).toUpperCase() + c.slice(1);
+    /kartk/i.test(c) ? t('Kartkówka') : /sprawdzian|klasówk|praca klasowa/i.test(c) ? t('Sprawdzian') : c.charAt(0).toUpperCase() + c.slice(1);
 
   const no = (l) => Number(l.LessonNo);
   /** By id; by name where Librus left either id out. */
@@ -97,13 +98,13 @@
     const [prev, l] = [lessons[i - 1], lessons[i]];
     const m = minutes(l.HourFrom) - minutes(prev.HourTo);
     if (!(m > 0)) return null;
-    if (Number(l.LessonNo) - Number(prev.LessonNo) > 1) return { text: `Okienko ${m} min`, long: true };
-    return m >= 15 ? { text: `Długa przerwa ${m} min`, long: true } : { text: `Przerwa ${m} min`, long: false };
+    if (Number(l.LessonNo) - Number(prev.LessonNo) > 1) return { text: t('Okienko {m} min', { m }), long: true };
+    return m >= 15 ? { text: t('Długa przerwa {m} min', { m }), long: true } : { text: t('Przerwa {m} min', { m }), long: false };
   }
 </script>
 
 {#if !lessons.length}
-  <p class="muted">Brak lekcji.</p>
+  <p class="muted">{t('Brak lekcji.')}</p>
 {:else}
   <ol class="lessons">
     {#each lessons as l, i (i)}
@@ -118,15 +119,15 @@
           <span class="subject">
             <!-- What a substitution replaced, struck out before what takes its place; read out as "X, teraz Y". -->
             <span class="name"
-              >{#if l.was?.subject}<s class="was">{l.was.subject}</s><span class="sr">, teraz</span>{' '}{/if}{l.Subject?.Name ?? ''}</span
+              >{#if l.was?.subject}<s class="was">{l.was.subject}</s><span class="sr">{t(', teraz')}</span>{' '}{/if}{l.Subject?.Name ?? ''}</span
             >
             <span class="marks"
-              >{#if l.IsCanceled}<em class="tag">odwołana</em>{:else if l.IsSubstitutionClass}<em class="tag notice">zastępstwo</em>{/if}{#if i === current}<em
-                  class="tag now">{l.HourFrom <= now ? `do końca ${minutes(l.HourTo) - minutes(now)} min` : 'następna'}</em
+              >{#if l.IsCanceled}<em class="tag">{t('odwołana')}</em>{:else if l.IsSubstitutionClass}<em class="tag notice">{t('zastępstwo')}</em>{/if}{#if i === current}<em
+                  class="tag now">{l.HourFrom <= now ? t('do końca {m} min', { m: minutes(l.HourTo) - minutes(now) }) : t('następna')}</em
                 >{/if}</span
             >
             <small class="muted">
-              {#if l.was?.teacher}<s class="was">{l.was.teacher}</s><span class="sr">, teraz</span>{' '}{/if}{[teacher(l.Teacher), l.room && room(l.room)]
+              {#if l.was?.teacher}<s class="was">{l.was.teacher}</s><span class="sr">{t(', teraz')}</span>{' '}{/if}{[teacher(l.Teacher), l.room && room(l.room)]
                 .filter(Boolean)
                 .join(' · ')}
             </small>

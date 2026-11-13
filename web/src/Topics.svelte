@@ -3,6 +3,7 @@
   import { fmtDay, person, plain } from './util.js';
   import Async from './Async.svelte';
   import Rich from './Rich.svelte';
+  import { t } from './i18n.js';
 
   let { login } = $props();
 
@@ -26,7 +27,7 @@
       days.get(x.Date).push({
         id: x.Id,
         no: x.LessonNo,
-        subject: subjects.get(String(lesson?.Subject?.Id))?.Name ?? 'Lekcja',
+        subject: subjects.get(String(lesson?.Subject?.Id))?.Name ?? t('Lekcja'),
         teacher: lesson?.Teacher?.Id ? person(users.get(String(lesson.Teacher.Id))) : '',
         topic: plain(x.Topic),
       });
@@ -39,7 +40,7 @@
   const days = resource(() => load(login), () => `topics/${login}`);
 </script>
 
-<Async r={days} empty="Brak tematów lekcji.">
+<Async r={days} empty={t('Brak tematów lekcji.')}>
   {#snippet children(all)}
     {#each all.slice(0, shown) as d (d.date)}
       <section class="card">
@@ -48,7 +49,7 @@
           {#each d.list as l (l.id)}
             <li>
               <strong>{l.subject}</strong>
-              <small class="muted">{[l.no && `lekcja ${l.no}`, l.teacher].filter(Boolean).join(' · ')}</small>
+              <small class="muted">{[l.no && t('lekcja {no}', { no: l.no }), l.teacher].filter(Boolean).join(' · ')}</small>
               {#if l.topic}<Rich text={l.topic} />{/if}
             </li>
           {/each}
@@ -56,7 +57,7 @@
       </section>
     {/each}
     {#if all.length > shown}
-      <button class="secondary" onclick={() => (shown += STEP)}>Pokaż starsze</button>
+      <button class="secondary" onclick={() => (shown += STEP)}>{t('Pokaż starsze')}</button>
     {/if}
   {/snippet}
 </Async>

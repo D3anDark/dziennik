@@ -856,6 +856,22 @@ themes.back = await js(bg);
 check('settings: a picked theme holds against the system and after a load, then the system is followed again', JSON.stringify(themes) === JSON.stringify({
   system: '#f2f4f7', dark: ['#0d0e10', 'dark', 'all'], loaded: ['#0d0e10', 'dark'], light: ['#f2f4f7', 'light'], followed: ['#0d0e10', null], back: '#f2f4f7' }), themes);
 
+// A language picked in Settings loads the page again in it, title and headings included, until Polish is picked back.
+const speak = async (name, code) => {
+  await js(`(() => { window.stale = true; ${choice('lang', name)}.click(); })()`);
+  await until(`!window.stale && document.documentElement?.lang === ${JSON.stringify(code)} && ${choice('lang', name)}?.getAttribute('aria-pressed') === 'true'`, 8000);
+  return js(`[document.title, document.querySelector('main h1').textContent.trim(), document.querySelector('main h2').textContent.trim()]`);
+};
+const spoken = { en: await speak('English', 'en') };
+await shot('18-settings-en');
+spoken.uk = await speak('Українська', 'uk');
+await shot('18-settings-uk');
+spoken.overflow = await js(`[...document.querySelectorAll('nav a, main button, main h1, main h2, main h3')].filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent.trim())`);
+spoken.pl = await speak('Polski', 'pl');
+check('settings: the interface follows the picked language after a load, and Polish comes back', JSON.stringify(spoken) === JSON.stringify({
+  en: ['Settings · Dziennik', 'Settings', 'Appearance'], uk: ['Налаштування · Dziennik', 'Налаштування', 'Вигляд'], overflow: [], pl: ['Ustawienia · Dziennik', 'Ustawienia', 'Wygląd'] }) &&
+  (await js(`localStorage.getItem('lang')`)) === 'pl', spoken);
+
 // The view the plan remembered shows among the settings, where it can go back to following the screen.
 const planWas = await js(`localStorage.getItem('plan-view')`);
 const planLabel = { day: 'Dzień', week: 'Tydzień' }[planWas] ?? 'Automatycznie';

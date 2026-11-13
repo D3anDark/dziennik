@@ -5,6 +5,7 @@
   import Async from './Async.svelte';
   import Icon from './Icon.svelte';
   import Mark from './Mark.svelte';
+  import { t } from './i18n.js';
 
   /** The student's activity list. `limit` cuts it for the start page, which links to the whole list. */
   let { login, limit = Infinity } = $props();
@@ -13,7 +14,7 @@
   const ICONS = { oceny: 'star', zachowanie: 'smile', frekwencja: 'check', uwagi: 'note', wiadomosci: 'mail', ogloszenia: 'megaphone', zadania: 'book', terminarz: 'calendar', plan: 'clock' };
 </script>
 
-<Async r={list} empty="Jeszcze nic. Pojawią się tu nowe, zmienione i usunięte oceny, nieobecności, uwagi, wiadomości i terminy, gdy włączysz powiadomienia.">
+<Async r={list} empty={t('Jeszcze nic. Pojawią się tu nowe, zmienione i usunięte oceny, nieobecności, uwagi, wiadomości i terminy, gdy włączysz powiadomienia.')}>
   {#snippet children(all)}
     <ul class="feed" class:card={limit === Infinity}>
       {#each all.slice(0, limit) as e (e.key)}

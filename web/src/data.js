@@ -1,5 +1,6 @@
 import { api, synergia, lookup, byId } from './api.svelte.js';
 import { iso, fmtDate, person, plain, gradeTone, room, today, shift } from './util.js';
+import { t } from './i18n.js';
 
 /**
  * Every grading system Synergia has. A school uses one or two and
@@ -22,10 +23,10 @@ const RECHECK = 15 * 60 * 1000;
 
 /** The grade says what it is itself (seen in live answers); the category flags are the fallback. */
 function final(grade, category) {
-  if (grade.IsFinal || category?.IsFinal) return 'Ocena roczna';
-  if (grade.IsFinalProposition || category?.IsFinalProposition) return 'Proponowana roczna';
-  if (grade.IsSemester || category?.IsSemestral) return 'Ocena semestralna';
-  if (grade.IsSemesterProposition || category?.IsSemestralProposition) return 'Proponowana semestralna';
+  if (grade.IsFinal || category?.IsFinal) return t('Ocena roczna');
+  if (grade.IsFinalProposition || category?.IsFinalProposition) return t('Proponowana roczna');
+  if (grade.IsSemester || category?.IsSemestral) return t('Ocena semestralna');
+  if (grade.IsSemesterProposition || category?.IsSemestralProposition) return t('Proponowana semestralna');
   return null;
 }
 
@@ -130,7 +131,7 @@ async function loadGrades(login) {
         items.push({
           id: `${s.path}/${gr.Id}`,
           subject: s.whole ? 'whole' : String(gr.Subject?.Id),
-          name: s.whole ? 'Oceny opisowe' : (subjects.get(String(gr.Subject?.Id))?.Name ?? 'Inne'),
+          name: s.whole ? t('Oceny opisowe') : (subjects.get(String(gr.Subject?.Id))?.Name ?? t('Inne')),
           value,
           // Only the 1 to 6 scale has colours that mean something.
           tone: s.path === 'Grades' ? gradeTone(value) : 'g0',
@@ -181,9 +182,9 @@ function change(l, date, users, subjects) {
   const [subject, teacher] = names(l.OrgSubject, l.OrgTeacher);
   const next = names(l.NewSubject, l.NewTeacher).filter(Boolean).join(', ');
   const text = [
-    next && `zmiana na: ${next}`,
-    l.OrgDate && l.OrgDate !== date && `przeniesiona z ${fmtDate(l.OrgDate)}`,
-    l.NewDate && l.NewDate !== date && `przeniesiona na ${fmtDate(l.NewDate)}`,
+    next && t('zmiana na: {next}', { next }),
+    l.OrgDate && l.OrgDate !== date && t('przeniesiona z {date}', { date: fmtDate(l.OrgDate) }),
+    l.NewDate && l.NewDate !== date && t('przeniesiona na {date}', { date: fmtDate(l.NewDate) }),
   ]
     .filter(Boolean)
     .join('\n');
@@ -191,17 +192,17 @@ function change(l, date, users, subjects) {
 }
 
 /** What a change is called (new, changed, removed) and where it shows, by the resource type of the change feed. */
-const term = ['Nowy termin', 'Zmieniony termin', 'Usunięty termin', 'terminarz'];
-const plan = ['Zmiana w planie lekcji', 'Zmiana w planie lekcji', 'Zmiana w planie lekcji', 'plan'];
+const term = [t('Nowy termin'), t('Zmieniony termin'), t('Usunięty termin'), 'terminarz'];
+const plan = [t('Zmiana w planie lekcji'), t('Zmiana w planie lekcji'), t('Zmiana w planie lekcji'), 'plan'];
 const NEWS = {
-  ...Object.fromEntries([...SYSTEMS.map((s) => s.path), 'PartialDescriptiveGrades'].map((p) => [p, ['Nowa ocena', 'Zmieniona ocena', 'Usunięta ocena', 'oceny']])),
-  BehaviourGrades: ['Nowa ocena z zachowania', 'Zmieniona ocena z zachowania', 'Usunięta ocena z zachowania', 'zachowanie'],
-  'BehaviourGrades/Points': ['Nowy wpis z zachowania', 'Zmieniony wpis z zachowania', 'Usunięty wpis z zachowania', 'zachowanie'],
-  Attendances: ['Nowy wpis we frekwencji', 'Zmieniony wpis we frekwencji', 'Usunięty wpis we frekwencji', 'frekwencja'],
-  Notes: ['Nowa uwaga', 'Zmieniona uwaga', 'Usunięta uwaga', 'uwagi'],
-  Messages: ['Nowa wiadomość', 'Zmieniona wiadomość', 'Usunięta wiadomość', 'wiadomosci'],
-  SchoolNotices: ['Nowe ogłoszenie', 'Zmienione ogłoszenie', 'Usunięte ogłoszenie', 'ogloszenia'],
-  HomeWorkAssignments: ['Nowe zadanie domowe', 'Zmienione zadanie domowe', 'Usunięte zadanie domowe', 'zadania'],
+  ...Object.fromEntries([...SYSTEMS.map((s) => s.path), 'PartialDescriptiveGrades'].map((p) => [p, [t('Nowa ocena'), t('Zmieniona ocena'), t('Usunięta ocena'), 'oceny']])),
+  BehaviourGrades: [t('Nowa ocena z zachowania'), t('Zmieniona ocena z zachowania'), t('Usunięta ocena z zachowania'), 'zachowanie'],
+  'BehaviourGrades/Points': [t('Nowy wpis z zachowania'), t('Zmieniony wpis z zachowania'), t('Usunięty wpis z zachowania'), 'zachowanie'],
+  Attendances: [t('Nowy wpis we frekwencji'), t('Zmieniony wpis we frekwencji'), t('Usunięty wpis we frekwencji'), 'frekwencja'],
+  Notes: [t('Nowa uwaga'), t('Zmieniona uwaga'), t('Usunięta uwaga'), 'uwagi'],
+  Messages: [t('Nowa wiadomość'), t('Zmieniona wiadomość'), t('Usunięta wiadomość'), 'wiadomosci'],
+  SchoolNotices: [t('Nowe ogłoszenie'), t('Zmienione ogłoszenie'), t('Usunięte ogłoszenie'), 'ogloszenia'],
+  HomeWorkAssignments: [t('Nowe zadanie domowe'), t('Zmienione zadanie domowe'), t('Usunięte zadanie domowe'), 'zadania'],
   HomeWorks: term,
   ParentTeacherConferences: term,
   'Calendars/ClassFreeDays': term,
@@ -246,12 +247,12 @@ export function upcomingDay(days, now = new Date()) {
 
 /** One timetable week: [{ date, lessons }] sorted, each lesson with `room`, `was`, `change` and the teacher's `note` resolved. */
 export async function week(login, weekStart) {
-  const t = (await synergia(login, `Timetables?weekStart=${weekStart}`)).Timetable ?? {};
-  const out = Object.keys(t)
+  const table = (await synergia(login, `Timetables?weekStart=${weekStart}`)).Timetable ?? {};
+  const out = Object.keys(table)
     .sort()
     .map((date) => ({
       date,
-      lessons: (t[date] ?? [])
+      lessons: (table[date] ?? [])
         .flat()
         .filter(Boolean)
         .sort((a, b) => Number(a.LessonNo) - Number(b.LessonNo)),
@@ -314,17 +315,17 @@ export async function monthEvents(login, year, month) {
       id: `hw${e.Id}`,
       date: e.Date,
       kind: 'event',
-      title: [cats.get(String(e.Category?.Id))?.Name ?? 'Wydarzenie', subjects.get(String(e.Subject?.Id))?.Name]
+      title: [cats.get(String(e.Category?.Id))?.Name ?? t('Wydarzenie'), subjects.get(String(e.Subject?.Id))?.Name]
         .filter(Boolean)
         .join(': '),
       // Apart, for the plan: the category on the lesson it is at, by its number or by the hour it starts.
-      category: cats.get(String(e.Category?.Id))?.Name ?? 'Wydarzenie',
+      category: cats.get(String(e.Category?.Id))?.Name ?? t('Wydarzenie'),
       subject: subjects.get(String(e.Subject?.Id))?.Name ?? '',
       subjectId: e.Subject?.Id ? String(e.Subject.Id) : '',
       lesson: Number(e.LessonNo) || 0,
       from: e.TimeFrom?.slice(0, 5) ?? '',
       detail: plain(e.Content),
-      when: e.LessonNo ? `lekcja ${e.LessonNo}` : hours(e.TimeFrom, e.TimeTo),
+      when: e.LessonNo ? t('lekcja {no}', { no: e.LessonNo }) : hours(e.TimeFrom, e.TimeTo),
       who: who(e.CreatedBy),
     })),
     ...cfd.map((e) => ({
@@ -332,23 +333,23 @@ export async function monthEvents(login, year, month) {
       date: e.DateFrom,
       to: e.DateTo,
       kind: 'free',
-      title: cfdTypes.get(String(e.Type?.Id))?.Name ?? 'Dzień wolny klasy',
+      title: cfdTypes.get(String(e.Type?.Id))?.Name ?? t('Dzień wolny klasy'),
       detail: plain(e.Name),
     })),
-    ...sfd.map((e) => ({ id: `sfd${e.Id}`, date: e.DateFrom, to: e.DateTo, kind: 'free', title: plain(e.Name) || 'Dzień wolny' })),
+    ...sfd.map((e) => ({ id: `sfd${e.Id}`, date: e.DateFrom, to: e.DateTo, kind: 'free', title: plain(e.Name) || t('Dzień wolny') })),
     ...tfd.map((e) => ({
       id: `tfd${e.Id}`,
       date: e.DateFrom,
       to: e.DateTo,
       kind: 'teacher',
-      title: `Nieobecność nauczyciela: ${who(e.Teacher)}`,
+      title: t('Nieobecność nauczyciela: {who}', { who: who(e.Teacher) }),
       when: hours(e.TimeFrom, e.TimeTo),
     })),
     ...ptc.map((e) => ({
       id: `ptc${e.Id}`,
       date: e.Date,
       kind: 'meeting',
-      title: plain(e.Name) || 'Wywiadówka',
+      title: plain(e.Name) || t('Wywiadówka'),
       detail: plain(e.Topic),
       when: [e.Time && e.Time !== '00:00:00' ? e.Time.slice(0, 5) : '', e.Room ? room(e.Room) : ''].filter(Boolean).join(' · '),
       who: who(e.Teacher),

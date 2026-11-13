@@ -1,6 +1,7 @@
 /** `me` is undefined while booting, null when logged out. */
 export const session = $state({ me: undefined });
 import { untrack } from 'svelte';
+import { t, lang } from './i18n.js';
 
 const SYNCED_KEY = 'synced';
 /**
@@ -53,37 +54,37 @@ document.addEventListener('visibilitychange', () => {
 });
 
 const MESSAGES = {
-  bad_credentials: 'Nieprawidłowy e-mail lub hasło.',
-  captcha: 'Librus wymaga captcha. Zaloguj się raz na portal.librus.pl w przeglądarce, potem spróbuj ponownie.',
-  not_allowed: 'Ten adres nie ma dostępu do aplikacji.',
-  rate_limited: 'Za dużo prób logowania. Spróbuj za 15 minut.',
-  maintenance: 'Librus ma przerwę techniczną.',
-  login_flow: 'Librus pokazał nieoczekiwaną stronę (np. nowy regulamin). Zaloguj się na portal.librus.pl i ją zaakceptuj.',
-  upstream: 'Librus nie odpowiada. Spróbuj później.',
-  account_broken: 'To konto ucznia jest nieaktywne w Librusie.',
-  offline: 'Brak połączenia i brak zapisanych danych.',
-  http_403: 'Szkoła nie udostępnia tego modułu.',
-  http_404: 'Brak danych w Librusie.',
+  bad_credentials: t('Nieprawidłowy e-mail lub hasło.'),
+  captcha: t('Librus wymaga captcha. Zaloguj się raz na portal.librus.pl w przeglądarce, potem spróbuj ponownie.'),
+  not_allowed: t('Ten adres nie ma dostępu do aplikacji.'),
+  rate_limited: t('Za dużo prób logowania. Spróbuj za 15 minut.'),
+  maintenance: t('Librus ma przerwę techniczną.'),
+  login_flow: t('Librus pokazał nieoczekiwaną stronę (np. nowy regulamin). Zaloguj się na portal.librus.pl i ją zaakceptuj.'),
+  upstream: t('Librus nie odpowiada. Spróbuj później.'),
+  account_broken: t('To konto ucznia jest nieaktywne w Librusie.'),
+  offline: t('Brak połączenia i brak zapisanych danych.'),
+  http_403: t('Szkoła nie udostępnia tego modułu.'),
+  http_404: t('Brak danych w Librusie.'),
   premium:
-    'Librus udostępnia ten moduł poza swoją stroną tylko kontom z wykupionymi Mobilnymi Dodatkami, a to konto ich nie ma. Znajdziesz go na synergia.librus.pl.',
-  bad_email: 'To nie wygląda na adres e-mail.',
-  list_full: 'Lista dostępu jest pełna. Usuń nieużywane adresy.',
-  forbidden: 'To może zrobić tylko administrator.',
-  relogin: 'Sesja Librusa wygasła. Zaloguj się ponownie.',
-  push_unsupported: 'Ta przeglądarka nie obsługuje powiadomień.',
-  push_denied: 'Przeglądarka nie dała zgody na powiadomienia.',
-  push_failed: 'Nie udało się wysłać powiadomienia na to urządzenie. Spróbuj ponownie.',
-  bad_device: 'Serwer nie obsługuje usługi powiadomień tej przeglądarki.',
-  unconfirmed: 'Librus nie potwierdził wysłania. Zanim wyślesz ponownie, sprawdź folder Wysłane.',
-  one_group: 'Na tym koncie jedna wiadomość trafia do osób z jednej grupy. Zostaw odbiorców z jednej grupy.',
-  subject_long: 'Temat może mieć najwyżej 150 znaków.',
-  body_long: 'Treść może mieć najwyżej 20 000 znaków.',
+    t('Librus udostępnia ten moduł poza swoją stroną tylko kontom z wykupionymi Mobilnymi Dodatkami, a to konto ich nie ma. Znajdziesz go na synergia.librus.pl.'),
+  bad_email: t('To nie wygląda na adres e-mail.'),
+  list_full: t('Lista dostępu jest pełna. Usuń nieużywane adresy.'),
+  forbidden: t('To może zrobić tylko administrator.'),
+  relogin: t('Sesja Librusa wygasła. Zaloguj się ponownie.'),
+  push_unsupported: t('Ta przeglądarka nie obsługuje powiadomień.'),
+  push_denied: t('Przeglądarka nie dała zgody na powiadomienia.'),
+  push_failed: t('Nie udało się wysłać powiadomienia na to urządzenie. Spróbuj ponownie.'),
+  bad_device: t('Serwer nie obsługuje usługi powiadomień tej przeglądarki.'),
+  unconfirmed: t('Librus nie potwierdził wysłania. Zanim wyślesz ponownie, sprawdź folder Wysłane.'),
+  one_group: t('Na tym koncie jedna wiadomość trafia do osób z jednej grupy. Zostaw odbiorców z jednej grupy.'),
+  subject_long: t('Temat może mieć najwyżej 150 znaków.'),
+  body_long: t('Treść może mieć najwyżej 20 000 znaków.'),
 };
 
 export function message(e) {
-  const text = MESSAGES[e?.message] ?? `Błąd: ${e?.message ?? e}`;
+  const text = MESSAGES[e?.message] ?? t('Błąd: {what}', { what: e?.message ?? e });
   // Librus says why it refused. Without its words every school-specific refusal reads the same.
-  return e?.cause && /^(http_|bad_credentials$)/.test(e.message) ? `${text} Librus: „${e.cause}”` : text;
+  return e?.cause && /^(http_|bad_credentials$)/.test(e.message) ? `${text} ${t('Librus: „{cause}”', { cause: e.cause })}` : text;
 }
 
 /** The demo build (vite --mode demo) has no server: demo.js answers in the page with made-up data. */
@@ -180,7 +181,8 @@ export function lookup(login, path) {
  */
 const REMEMBER_MAX = 40;
 const remembered = new Map();
-const BUILD = import.meta.url;
+// Labels made in data.js are in the language of the page, so another language does not reuse them either.
+const BUILD = `${import.meta.url}#${lang}`;
 const DB = 'dziennik';
 const STORE = 'views';
 

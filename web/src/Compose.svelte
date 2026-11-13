@@ -5,6 +5,7 @@
   import Async from './Async.svelte';
   import Icon from './Icon.svelte';
   import { viaWeb, useWeb, groups as webGroups, send as webSend } from './webmail.js';
+  import { t } from './i18n.js';
 
   /** `original` is the message being answered (from Messages' loadOne), or null for a new message. */
   let { login, original = null, replyId = null, onsent } = $props();
@@ -83,8 +84,8 @@
   async function send(e) {
     e.preventDefault();
     error = '';
-    if (!replyId && !picked.length) return (error = 'Wybierz odbiorcę wiadomości.');
-    if (!subject.trim() || !body.trim()) return (error = 'Uzupełnij temat i treść.');
+    if (!replyId && !picked.length) return (error = t('Wybierz odbiorcę wiadomości.'));
+    if (!subject.trim() || !body.trim()) return (error = t('Uzupełnij temat i treść.'));
     busy = true;
     try {
       const msg = replyId
@@ -99,35 +100,35 @@
   }
 </script>
 
-<p><a class="back" href={replyId ? `#/wiadomosci/${replyId}` : '#/wiadomosci'}><Icon name="left" size={18} />{replyId ? 'Wiadomość' : 'Wiadomości'}</a></p>
-<h1 class="title" tabindex="-1">{replyId ? 'Odpowiedź' : 'Nowa wiadomość'}</h1>
+<p><a class="back" href={replyId ? `#/wiadomosci/${replyId}` : '#/wiadomosci'}><Icon name="left" size={18} />{replyId ? t('Wiadomość') : t('Wiadomości')}</a></p>
+<h1 class="title" tabindex="-1">{replyId ? t('Odpowiedź') : t('Nowa wiadomość')}</h1>
 
 <form class="card compose" onsubmit={send}>
   {#if replyId}
-    <p class="muted">Do: {original?.from ?? '…'}</p>
+    <p class="muted">{t('Do:')} {original?.from ?? '…'}</p>
   {:else}
     <fieldset class="receivers">
-      <legend>Do</legend>
+      <legend>{t('Do')}</legend>
       {#if picked.length}
         <ul class="chips picked">
           {#each picked as id (id)}
             <li>
-              <button type="button" class="pill" onclick={() => toggle(id, false)} aria-label="Usuń {names.get(id)}">
+              <button type="button" class="pill" onclick={() => toggle(id, false)} aria-label={t('Usuń {name}', { name: names.get(id) })}>
                 {names.get(id)}<Icon name="close" size={16} />
               </button>
             </li>
           {/each}
         </ul>
       {/if}
-      <Async r={book} empty="Brak dostępnych odbiorców.">
+      <Async r={book} empty={t('Brak dostępnych odbiorców.')}>
         {#snippet children(sections)}
-          <input type="search" name="receiver" placeholder="Szukaj odbiorcy…" aria-label="Szukaj odbiorcy" autocomplete="off" enterkeyhint="search" bind:value={filter} onkeydown={enter((field) => field.blur())} />
+          <input type="search" name="receiver" placeholder={t('Szukaj odbiorcy…')} aria-label={t('Szukaj odbiorcy')} autocomplete="off" enterkeyhint="search" bind:value={filter} onkeydown={enter((field) => field.blur())} />
           {#each sections as s (s.label)}
             {@const shown = query ? s.people.filter((p) => p.Label.toLowerCase().includes(query)) : s.people}
             {@const chosen = shown.filter((p) => picked.includes(String(p.Id))).length}
             {#if shown.length}
               <details open={query.length > 1}>
-                <summary>{s.label} <span class="muted">{chosen} z {shown.length}</span></summary>
+                <summary>{s.label} <span class="muted">{t('{chosen} z {all}', { chosen, all: shown.length })}</span></summary>
                 {#each shown as p (p.Id)}
                   <label class="check">
                     <input type="checkbox" checked={picked.includes(String(p.Id))} onchange={(e) => toggle(String(p.Id), e.currentTarget.checked)} />
@@ -142,15 +143,15 @@
     </fieldset>
   {/if}
   <label>
-    Temat
+    {t('Temat')}
     <input name="subject" autocomplete="off" enterkeyhint="next" required bind:value={subject} onkeydown={enter(() => bodyField.focus())} />
   </label>
   <label>
-    Treść
+    {t('Treść')}
     <textarea name="body" required rows="8" bind:value={body} bind:this={bodyField}></textarea>
   </label>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <div class="dock">
-    <button class="primary send" disabled={busy}>{busy ? 'Wysyłanie…' : 'Wyślij'}</button>
+    <button class="primary send" disabled={busy}>{busy ? t('Wysyłanie…') : t('Wyślij')}</button>
   </div>
 </form>

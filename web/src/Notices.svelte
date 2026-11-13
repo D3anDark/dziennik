@@ -3,6 +3,7 @@
   import { fmtDate, person, plain } from './util.js';
   import Async from './Async.svelte';
   import Rich from './Rich.svelte';
+  import { t } from './i18n.js';
 
   let { login } = $props();
 
@@ -12,7 +13,7 @@
     return (n.SchoolNotices ?? [])
       .map((x) => ({
         id: x.Id,
-        title: plain(x.Subject) || 'Ogłoszenie',
+        title: plain(x.Subject) || t('Ogłoszenie'),
         text: plain(x.Content),
         date: x.StartDate ?? x.CreationDate ?? '',
         until: x.EndDate,
@@ -24,7 +25,7 @@
   const list = resource(() => load(login), () => `notices/${login}`);
 </script>
 
-<Async r={list} empty="Brak ogłoszeń.">
+<Async r={list} empty={t('Brak ogłoszeń.')}>
   {#snippet children(items)}
     <div class="card stack">
       {#each items as n (n.id)}
@@ -34,7 +35,7 @@
             <small class="muted">{[fmtDate(n.date), n.who].filter(Boolean).join(' · ')}</small>
           </summary>
           <Rich text={n.text} />
-          {#if n.until}<p class="muted">Ważne do {fmtDate(n.until)}</p>{/if}
+          {#if n.until}<p class="muted">{t('Ważne do {date}', { date: fmtDate(n.until) })}</p>{/if}
         </details>
       {/each}
     </div>

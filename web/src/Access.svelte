@@ -3,6 +3,7 @@
   import { fmtUnix, mail } from './util.js';
   import Async from './Async.svelte';
   import Icon from './Icon.svelte';
+  import { t } from './i18n.js';
 
   /** Admin only: the addresses allowed to sign in. The server checks the role on every call. */
   let email = $state('');
@@ -37,37 +38,37 @@
   }
 
   function remove(address) {
-    if (!confirm(`Odebrać dostęp adresowi ${address}? Ta osoba zostanie wylogowana.`)) return;
+    if (!confirm(t('Odebrać dostęp adresowi {address}? Ta osoba zostanie wylogowana.', { address }))) return;
     change(() => api(`admin/emails/${encodeURIComponent(address)}`, { method: 'DELETE' }));
   }
 </script>
 
 <form class="card compose" onsubmit={add}>
   <label>
-    E-mail konta LIBRUS
-    <input type="email" name="email" placeholder="uczen@przyklad.pl" required maxlength="254" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="done" bind:value={email} />
+    {t('E-mail konta LIBRUS')}
+    <input type="email" name="email" placeholder={t('uczen@przyklad.pl')} required maxlength="254" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="done" bind:value={email} />
   </label>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-  <button class="primary" disabled={busy || !email.trim()}><Icon name="plus" size={20} />Daj dostęp</button>
+  <button class="primary" disabled={busy || !email.trim()}><Icon name="plus" size={20} />{t('Daj dostęp')}</button>
 </form>
 
 <Async r={list}>
   {#snippet children(d)}
     <section class="card">
-      <h2>Dodane adresy <span class="muted count">{d.emails.length}</span></h2>
+      <h2>{t('Dodane adresy')} <span class="muted count">{d.emails.length}</span></h2>
       {#if !d.emails.length}
-        <p class="muted">Nikt jeszcze nie dostał dostępu.</p>
+        <p class="muted">{t('Nikt jeszcze nie dostał dostępu.')}</p>
       {:else}
         <ul class="entries access">
           {#each d.emails as a (a.email)}
             <li>
               <span class="grow">
                 {mail(a.email)}
-                <small class="muted">{a.active ? 'zalogowany' : 'niezalogowany'} · dodany {fmtUnix(a.added)}</small>
+                <small class="muted">{a.active ? t('zalogowany') : t('niezalogowany')} · {t('dodany {when}', { when: fmtUnix(a.added) })}</small>
                 <!-- Why the last sign-in failed, as the person saw it; gone once one works. -->
-                {#if a.failed}<small class="error">Nieudane logowanie {fmtUnix(a.failed.at)}: {message({ message: a.failed.reason, cause: a.failed.said })}</small>{/if}
+                {#if a.failed}<small class="error">{t('Nieudane logowanie {when}:', { when: fmtUnix(a.failed.at) })} {message({ message: a.failed.reason, cause: a.failed.said })}</small>{/if}
               </span>
-              <button class="icon-btn" disabled={busy} onclick={() => remove(a.email)} aria-label="Odbierz dostęp: {a.email}" title="Odbierz dostęp">
+              <button class="icon-btn" disabled={busy} onclick={() => remove(a.email)} aria-label={t('Odbierz dostęp: {email}', { email: a.email })} title={t('Odbierz dostęp')}>
                 <Icon name="close" />
               </button>
             </li>
@@ -76,14 +77,14 @@
       {/if}
     </section>
     <section class="card">
-      <h2>Z konfiguracji serwera</h2>
+      <h2>{t('Z konfiguracji serwera')}</h2>
       <ul class="entries access">
         {#each d.fixed as a (a)}
           <li><span class="grow">{mail(a)}</span></li>
         {/each}
       </ul>
-      <p class="muted">Zmienne <code translate="no">ADMIN_EMAILS</code> i <code translate="no">ALLOWED_EMAILS</code>. Zmiana wymaga restartu serwera.</p>
-      {#if commit}<p class="muted">Serwer zbudowany z commita <code translate="no">{commit}</code>.</p>{/if}
+      <p class="muted">{t('Zmienne')} <code translate="no">ADMIN_EMAILS</code> {t('i')} <code translate="no">ALLOWED_EMAILS</code>. {t('Zmiana wymaga restartu serwera.')}</p>
+      {#if commit}<p class="muted">{t('Serwer zbudowany z commita')} <code translate="no">{commit}</code>.</p>{/if}
     </section>
   {/snippet}
 </Async>

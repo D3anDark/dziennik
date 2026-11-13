@@ -5,6 +5,7 @@
   import Async from './Async.svelte';
   import Mark from './Mark.svelte';
   import Icon from './Icon.svelte';
+  import { t, locale } from './i18n.js';
 
   let { login } = $props();
   let open = $state(null);
@@ -15,7 +16,7 @@
   const forced = stored(FORCED_KEY);
   const [plus, minus] = [PLUS, MINUS].map((s) => Number(choiceOf(s)));
   const halves = choiceOf(YEAR) === 'halves';
-  const comma = (n) => String(n).replace('.', ',');
+  const comma = (n) => Number(n).toLocaleString(locale);
 
   /** Librus sends "0.00" (or nothing) when a school hides averages. */
   const avg = (v) => (Number(v) > 0 ? fmtAverage(Number(v)) : null);
@@ -91,8 +92,8 @@
   /** The semester's average of a subject as the app counts it, and what it becomes with the grades tried out. */
   function outcome(s, sem) {
     const [before, after] = [counts(s), counts(s, tries[s.key])];
-    return (sem === 1 ? [['I sem.', 'Semester1']] : [['II sem.', 'Semester2'], ['rok', 'FullYear']])
-      .map(([k, f]) => `${k} ${before[f] ? fmtAverage(before[f]) : 'brak'} → ${after[f] ? fmtAverage(after[f]) : 'brak'}`)
+    return (sem === 1 ? [[t('I sem.'), 'Semester1']] : [[t('II sem.'), 'Semester2'], [t('rok'), 'FullYear']])
+      .map(([k, f]) => `${k} ${before[f] ? fmtAverage(before[f]) : t('brak')} → ${after[f] ? fmtAverage(after[f]) : t('brak')}`)
       .join(', ');
   }
 
@@ -102,19 +103,19 @@
    * and stay out; a single subject is no mean.
    */
   function overall(shown, sem) {
-    const say = (what, values) => (values.length > 1 ? `${what} ${fmtAverage(values.reduce((a, b) => a + b) / values.length)} (z\u00a0${values.length} przedmiotów)` : '');
+    const say = (what, values) => (values.length > 1 ? t('{what} {average} (z\u00a0{n} przedmiotów)', { what, average: fmtAverage(values.reduce((a, b) => a + b) / values.length), n: values.length }) : '');
     const averages = shown.flatMap((s) => {
       const of = (k) => s.avg.find(([t, name]) => t === sem && name === k)?.[3];
-      const n = sem === 1 ? of('I sem.') : (of('rok') ?? of('II sem.'));
+      const n = sem === 1 ? of(t('I sem.')) : (of(t('rok')) ?? of(t('II sem.')));
       return n > 0 && !s.points ? [n] : [];
     });
     const finals = (kind) => shown.flatMap((s) => s.final[sem].filter((g) => g.kind === kind).map((g) => worth(g.value, 0, 0)).filter(Boolean));
-    const [final, proposed, word] = sem === 1 ? ['Ocena semestralna', 'Proponowana semestralna', 'semestralnych'] : ['Ocena roczna', 'Proponowana roczna', 'rocznych'];
-    const parts = [
-      say('średnia ze średnich', averages),
-      say(`średnia ocen ${word}`, finals(final)) || say(`średnia proponowanych ocen ${word}`, finals(proposed)),
-    ].filter(Boolean);
-    return parts.length ? `Wszystkie przedmioty: ${parts.join(', ')}.` : '';
+    const [final, proposed, ofFinal, ofProposed] =
+      sem === 1
+        ? [t('Ocena semestralna'), t('Proponowana semestralna'), t('średnia ocen semestralnych'), t('średnia proponowanych ocen semestralnych')]
+        : [t('Ocena roczna'), t('Proponowana roczna'), t('średnia ocen rocznych'), t('średnia proponowanych ocen rocznych')];
+    const parts = [say(t('średnia ze średnich'), averages), say(ofFinal, finals(final)) || say(ofProposed, finals(proposed))].filter(Boolean);
+    return parts.length ? t('Wszystkie przedmioty: {parts}.', { parts: parts.join(', ') }) : '';
   }
 
   async function load(login) {
@@ -127,7 +128,7 @@
           key: g.subject,
           name: g.name,
           // Subjects missing from Librus' list are all "Inne"; whoever gave the grades tells them apart.
-          hint: g.subject !== 'whole' && g.name === 'Inne' ? g.teacher : '',
+          hint: g.subject !== 'whole' && g.name === t('Inne') ? g.teacher : '',
           // by `semester`: 0 holds descriptive grades that belong to no semester, shown with either
           rows: [[], [], []],
           // final grades the same way: a semestral one with its semester, a yearly one with the second
@@ -136,7 +137,7 @@
       }
       const group = groups.get(g.subject);
       g.fresh = fresh.has(g.id);
-      if (g.kind) group.final[/roczna/.test(g.kind) ? 2 : g.semester].push(g);
+      if (g.kind) group.final[[t('Ocena roczna'), t('Proponowana roczna')].includes(g.kind) ? 2 : g.semester].push(g);
       else group.rows[g.semester].push(g);
     }
     // A school that hides its averages sends none: then they are counted here (`own`), from the grades and weights.
@@ -154,13 +155,13 @@
       const said = (v) => (avg(v) && s.own && s.points ? `${avg(v)}%` : avg(v));
       // by semester; the year's average with the second's
       s.avg = [
-        [1, 'I sem.', said(av?.Semester1), Number(av?.Semester1)],
-        [2, 'II sem.', said(av?.Semester2), Number(av?.Semester2)],
-        [2, 'rok', said(av?.FullYear), Number(av?.FullYear)],
+        [1, t('I sem.'), said(av?.Semester1), Number(av?.Semester1)],
+        [2, t('II sem.'), said(av?.Semester2), Number(av?.Semester2)],
+        [2, t('rok'), said(av?.FullYear), Number(av?.FullYear)],
       ].filter(([, , v]) => v);
     }
     // Named subjects first; "Inne" (subjects Librus does not list) and the descriptive grades of the whole year after them.
-    const rank = (s) => (s.key === 'whole' ? 2 : s.name === 'Inne' ? 1 : 0);
+    const rank = (s) => (s.key === 'whole' ? 2 : s.name === t('Inne') ? 1 : 0);
     return [...groups.values()].sort((p, q) => rank(p) - rank(q) || p.name.localeCompare(q.name, 'pl'));
   }
 
@@ -175,37 +176,43 @@
       markGradeSeen(login, g.id);
     }
   }
+
+  /** How the app counts its averages, as picked in "Ustawienia". */
+  const rules = (unweighted) =>
+    [t('plus +{v}', { v: comma(plus) }), t('minus −{v}', { v: comma(minus) }), unweighted && t('ocena bez wagi raz'), halves && t('rok jako średnia z\u00a0obu semestrów')]
+      .filter(Boolean)
+      .join(', ');
 </script>
 
-<Async r={subjects} empty="Brak ocen.">
+<Async r={subjects} empty={t('Brak ocen.')}>
   {#snippet children(list)}
     {@const sem = chosen ?? (list.some((s) => s.rows[2].length || s.final[2].length) ? 2 : 1)}
     {@const shown = list.filter((s) => s.rows[sem].length || s.final[sem].length || s.rows[0].length || s.final[0].length)}
     {@const all = overall(shown, sem)}
     <div class="toolbar">
-      <div class="segmented" role="group" aria-label="Semestr">
-        <button aria-pressed={sem === 1} onclick={() => (chosen = 1)}>I semestr</button>
-        <button aria-pressed={sem === 2} onclick={() => (chosen = 2)}>II semestr</button>
+      <div class="segmented" role="group" aria-label={t('Semestr')}>
+        <button aria-pressed={sem === 1} onclick={() => (chosen = 1)}>{t('I semestr')}</button>
+        <button aria-pressed={sem === 2} onclick={() => (chosen = 2)}>{t('II semestr')}</button>
       </div>
-      <button class="secondary" aria-pressed={simulating} onclick={() => (simulating = !simulating)}>Symulator</button>
+      <button class="secondary" aria-pressed={simulating} onclick={() => (simulating = !simulating)}>{t('Symulator')}</button>
     </div>
     {#if simulating}
-      <p class="overall">Symulator: dodaj przy przedmiocie ocenę na próbę i&nbsp;zobacz, co zrobi ze średnią. Średnie przed i&nbsp;po liczy aplikacja; ocena na próbę znika po dotknięciu i&nbsp;po wyjściu z&nbsp;ocen.</p>
+      <p class="overall">{t('Symulator: dodaj przy przedmiocie ocenę na próbę i\u00a0zobacz, co zrobi ze średnią. Średnie przed i\u00a0po liczy aplikacja; ocena na próbę znika po dotknięciu i\u00a0po wyjściu z\u00a0ocen.')}</p>
     {/if}
     {#if shown.some((s) => [...s.rows[sem], ...s.rows[0]].some((g) => g.fresh))}
-      <p class="muted fresh-key"><span class="dot new"></span>nowa ocena: kropka znika po jej otwarciu</p>
+      <p class="muted fresh-key"><span class="dot new"></span>{t('nowa ocena: kropka znika po jej otwarciu')}</p>
     {/if}
     {#if shown.some((s) => s.own && s.avg.some(([t]) => t === sem))}
-      {@const percent = shown.some((s) => s.own && s.points) ? ' Przy ocenach punktowych to procent zdobytych punktów, przy procentowych ich średnia z wagami.' : ''}
+      {@const percent = shown.some((s) => s.own && s.points) ? ` ${t('Przy ocenach punktowych to procent zdobytych punktów, przy procentowych ich średnia z wagami.')}` : ''}
       {#if forced}
-        <p class="byline">Średnie wylicza aplikacja z&nbsp;każdej oceny 1–6 (plus +{comma(plus)}, minus −{comma(minus)}, ocena bez wagi raz{halves ? ', rok jako średnia z\u00a0obu semestrów' : ''}), jak wybrano w&nbsp;<a href="#/ustawienia">Ustawieniach</a>.{percent} Szkoła może liczyć inaczej.</p>
+        <p class="byline">{t('Średnie wylicza aplikacja z\u00a0każdej oceny 1–6 ({rules}), jak wybrano w', { rules: rules(true) })}&nbsp;<a href="#/ustawienia">{t('Ustawieniach')}</a>.{percent} {t('Szkoła może liczyć inaczej.')}</p>
       {:else}
-        <p class="byline">Średnie wylicza aplikacja z&nbsp;ocen i&nbsp;wag, bo Librus ich nie podaje (plus +{comma(plus)}, minus −{comma(minus)}{halves ? ', rok jako średnia z\u00a0obu semestrów' : ''}).{percent} Szkoła może liczyć inaczej.</p>
+        <p class="byline">{t('Średnie wylicza aplikacja z\u00a0ocen i\u00a0wag, bo Librus ich nie podaje ({rules}).', { rules: rules(false) })}{percent} {t('Szkoła może liczyć inaczej.')}</p>
       {/if}
     {/if}
     {#if all}<p class="overall">{all}</p>{/if}
     {#if !shown.length}
-      <p class="center muted">Brak ocen w {sem === 1 ? 'I' : 'II'} semestrze.</p>
+      <p class="center muted">{sem === 1 ? t('Brak ocen w I semestrze.') : t('Brak ocen w II semestrze.')}</p>
     {:else}
       <div class="card sheet">
         {#each shown as s (s.key)}
@@ -214,17 +221,17 @@
             <div class="head">
               <h2>{s.name}{#if s.hint}<small class="muted">{s.hint}</small>{/if}</h2>
               <!-- A pair per span, so a line breaks between "II sem. 5,00" and "rok 5,00", never inside one. -->
-              {#if avgs.length}<span>{#each avgs as [, k, v], i (k)}{i ? ', ' : ''}<span>{i ? '' : 'śr. '}{k} {v}</span>{/each}</span>{/if}
+              {#if avgs.length}<span>{#each avgs as [, k, v], i (k)}{i ? ', ' : ''}<span>{i ? '' : `${t('śr.')} `}{k} {v}</span>{/each}</span>{/if}
             </div>
             <div class="lines">
-              {#each [['Bieżące', s.rows[sem]], ['Opis', s.rows[0]]] as [label, grades] (label)}
+              {#each [[t('Bieżące'), s.rows[sem]], [t('Opis'), s.rows[0]]] as [label, grades] (label)}
                 {#if grades.length}
                   <div class="row">
                     <span class="muted label">{label}</span>
                     <ul class="chips">
                       {#each grades as g (g.id)}
                         <li>
-                          <button class="chip {g.tone}" class:fresh={g.fresh} aria-label="Ocena {g.value}{g.was ? `, poprawa oceny ${g.was.at(-1).value}` : ''}{g.fresh ? ', nowa' : ''}" aria-expanded={open === g.id} onclick={() => toggle(g)}>
+                          <button class="chip {g.tone}" class:fresh={g.fresh} aria-label={t('Ocena {value}', { value: g.value }) + (g.was ? t(', poprawa oceny {value}', { value: g.was.at(-1).value }) : '') + (g.fresh ? t(', nowa') : '')} aria-expanded={open === g.id} onclick={() => toggle(g)}>
                             <Mark value={g.value} was={g.was} />
                           </button>
                         </li>
@@ -233,12 +240,12 @@
                   </div>
                   {#each grades.filter((g) => g.id === open) as g (g.id)}
                     <p class="detail">
-                      <span class="what">{g.category || 'Bez kategorii'}{#if g.weight}{` · waga ${g.weight}`}{/if}</span><br />
+                      <span class="what">{g.category || t('Bez kategorii')}{#if g.weight}{` · ${t('waga {w}', { w: g.weight })}`}{/if}</span><br />
                       {fmtDate(g.date)}{#if g.teacher}{` · ${g.teacher}`}{/if}
                       {#if g.text}<br />{g.text}{/if}
                       {#if g.comment}<br />{g.comment}{/if}
                       {#each (g.was ?? []).toReversed() as w (w.id)}
-                        <br />Poprawiona ocena: {[w.value, fmtDate(w.date), w.text, w.comment].filter(Boolean).join(' · ')}
+                        <br />{t('Poprawiona ocena:')} {[w.value, fmtDate(w.date), w.text, w.comment].filter(Boolean).join(' · ')}
                       {/each}
                     </p>
                   {/each}
@@ -246,29 +253,29 @@
               {/each}
               {#if simulating && s.key !== 'whole' && !s.points}
                 <div class="row">
-                  <span class="muted label">Na próbę</span>
+                  <span class="muted label">{t('Na próbę')}</span>
                   <ul class="chips">
                     {#each (tries[s.key] ?? []).filter((g) => g.semester === sem) as g (g.id)}
                       <li>
-                        <button class="chip tried {g.tone}" aria-label="Ocena na próbę {g.value}, waga {g.weight}: usuń" title="Waga {g.weight}: usuń" onclick={() => (tries[s.key] = tries[s.key].filter((x) => x !== g))}>
+                        <button class="chip tried {g.tone}" aria-label={t('Ocena na próbę {value}, waga {w}: usuń', { value: g.value, w: g.weight })} title={t('Waga {w}: usuń', { w: g.weight })} onclick={() => (tries[s.key] = tries[s.key].filter((x) => x !== g))}>
                           <Mark value={g.value} />
                         </button>
                       </li>
                     {/each}
                     <li>
                       <form class="try" onsubmit={(e) => tryOut(e, s.key, sem)}>
-                        <select name="value" aria-label="Ocena na próbę: {s.name}">
+                        <select name="value" aria-label={t('Ocena na próbę: {name}', { name: s.name })}>
                           {#each TRY_VALUES as v (v)}<option selected={v === '5'}>{v}</option>{/each}
                         </select>
-                        <select name="weight" aria-label="Waga oceny na próbę">
-                          {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as w (w)}<option value={w}>waga {w}</option>{/each}
+                        <select name="weight" aria-label={t('Waga oceny na próbę')}>
+                          {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as w (w)}<option value={w}>{t('waga {w}', { w })}</option>{/each}
                         </select>
-                        <button class="secondary" disabled={(tries[s.key]?.length ?? 0) >= TRY_MAX} aria-label="Dodaj ocenę na próbę: {s.name}" title="Dodaj ocenę na próbę"><Icon name="plus" size={18} /></button>
+                        <button class="secondary" disabled={(tries[s.key]?.length ?? 0) >= TRY_MAX} aria-label={t('Dodaj ocenę na próbę: {name}', { name: s.name })} title={t('Dodaj ocenę na próbę')}><Icon name="plus" size={18} /></button>
                       </form>
                     </li>
                   </ul>
                 </div>
-                {#if tries[s.key]?.length}<p class="overall" role="status">Po zmianie: {outcome(s, sem)}</p>{/if}
+                {#if tries[s.key]?.length}<p class="overall" role="status">{t('Po zmianie: {outcome}', { outcome: outcome(s, sem) })}</p>{/if}
               {/if}
               <!-- A final grade in the same two columns: its kind where "Bieżące" stands, the grade under the chips. -->
               {#each [...s.final[sem], ...s.final[0]] as g (g.id)}
