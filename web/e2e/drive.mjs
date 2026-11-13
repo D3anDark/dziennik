@@ -410,7 +410,7 @@ check('install: the offer is held back, asked on the button, and the button goes
 check('install: no Android advice off Android', !(await mainText()).includes('na Androidzie'));
 check('more: account and logout live here', (await mainText()).includes('Zalogowano jako rodzic@example.com') && (await js(hasButton('Wyloguj'))));
 await shot('5-more');
-check('more: a bug report opens the issues apart from the app', await js(`(() => { const a = [...document.querySelectorAll('main a')].find((e) => e.textContent.trim() === 'Zgłoś błąd'); return a?.href === 'https://github.com/D3anDark/dziennik/issues/new?template=bug.yml&server=127.0.0.1%3A18081' && a.target === '_blank'; })()`));
+check('more: a bug report opens the issues apart from the app', await js(`(() => { const a = [...document.querySelectorAll('main a')].find((e) => e.textContent.trim() === 'Zgłoś błąd'); return a?.href === 'https://github.com/unisic/dziennik/issues/new?template=bug.yml&server=127.0.0.1%3A18081' && a.target === '_blank'; })()`));
 
 await go('#/terminarz', `document.querySelectorAll('main .events li').length > 0`);
 const cal = await text('main .events li strong');

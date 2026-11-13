@@ -24,8 +24,8 @@ const stampServiceWorker = {
  * are the card everywhere else, and Discord's own when it refuses the components. The pictures are screenshots of the
  * demo (`SHOTS=dir e2e/demo.sh`), kept in demo/.
  */
-const DEMO = 'https://d3andark.github.io/dziennik/';
-const REPO = 'https://github.com/D3anDark/dziennik';
+const DEMO = 'https://unisic.github.io/dziennik/';
+const REPO = 'https://github.com/unisic/dziennik';
 const ABOUT = 'Nieoficjalna aplikacja do dziennika LIBRUS: oceny ze średnimi, plan lekcji, frekwencja, wiadomości, terminarz i powiadomienia.';
 const SAMPLE = 'Wersja demo: przykładowe dane, bez logowania i bez serwera.';
 const PICTURES = [

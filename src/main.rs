@@ -509,7 +509,7 @@ async fn inject(mut req: Request, next: Next) -> Result<Response, ApiError> {
 }
 
 /// The official repository on GitHub. Changes only if the repository moves.
-const REPO: &str = "d3andark/dziennik";
+const REPO: &str = "unisic/dziennik";
 
 /// GitHub's word on an "official" build: its commit is on the official main branch. build.rs knows only that the tree
 /// is its commit unchanged; a local clone's remote branches can be pointed anywhere (a fork with the official URL,

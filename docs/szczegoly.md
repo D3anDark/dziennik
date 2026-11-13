@@ -11,7 +11,7 @@ JSON. Na stronie Synergii wysyła wyłącznie formularze z listy `WEB_WRITES`. H
 
 ## Demo
 
-Wersja demo: <https://d3andark.github.io/dziennik/>. To ten sam frontend z przykładowymi danymi rodzica trojga dzieci
+Wersja demo: <https://unisic.github.io/dziennik/>. To ten sam frontend z przykładowymi danymi rodzica trojga dzieci
 (trzecie chodzi do szkoły z ocenami punktowymi, procentowymi, literowymi, słownymi i opisowymi, bez średnich z Librusa
 i z własnym rodzajem frekwencji), bez logowania i bez serwera: `web/src/demo.js` odpowiada na zapytania aplikacji w
 przeglądarce, daty idą za zegarem urządzenia albo za dniem wybranym w banerze demo (styczeń, marzec, czerwiec, lipiec:
@@ -91,7 +91,7 @@ osobę. Wylogowanie wyłącza powiadomienia na tym urządzeniu. Stan kanału ka�
 
 Przy kompilacji `build.rs` pyta git, czy drzewo jest czyste: bez zmian i nowych plików, każdy śledzony plik ma ten sam
 skrót co w commicie. Przy starcie serwer pyta GitHub (`api.github.com`, bez danych użytkowników), czy ten commit leży
-na `main` oficjalnego repozytorium (`github.com/D3anDark/dziennik`, `REPO` w `src/main.rs`). Lokalnych gałęzi zdalnych
+na `main` oficjalnego repozytorium (`github.com/unisic/dziennik`, `REPO` w `src/main.rs`). Lokalnych gałęzi zdalnych
 serwer nie sprawdza: da się je przestawić dowolnie, a platformy budujące mogą klonować bez nich. Wynik
 (`official`, `modified` albo `unknown`, gdy gita albo GitHuba nie da się zapytać) i commit podaje `GET /api/about`
 oraz log startu. Gdy wynik nie jest `official`, ostrzeżenie pokazuje sam serwer, niezależnie od frontendu: do każdej

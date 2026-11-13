@@ -58,7 +58,7 @@ Tryb deweloperski frontendu: `cd web && npm run dev` (Vite przekierowuje `/api` 
 Najprościej, na serwerze z Dockerem i domeną, która na niego wskazuje:
 
 ```sh
-git clone https://github.com/D3anDark/dziennik.git && cd dziennik
+git clone https://github.com/unisic/dziennik.git && cd dziennik
 sh install.sh
 ```
 

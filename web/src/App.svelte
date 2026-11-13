@@ -48,7 +48,7 @@
   };
   const TABS = ['start', 'oceny', 'plan', 'wiadomosci'];
   // The form in .github/ISSUE_TEMPLATE/bug.yml, its `server` field filled in.
-  const ISSUES = `https://github.com/D3anDark/dziennik/issues/new?template=bug.yml&server=${encodeURIComponent(location.host)}`;
+  const ISSUES = `https://github.com/unisic/dziennik/issues/new?template=bug.yml&server=${encodeURIComponent(location.host)}`;
   // Days of this school year the demo can be seen on (main.js moves its clock there): around each semester's end.
   const year = new Date().getFullYear() - (new Date().getMonth() < 8);
   const DEMO_DAYS = [
@@ -275,7 +275,7 @@
 
       {#if DEMO}
         <p class="banner" role="note">
-          <span><strong>Wersja demo:</strong> przykładowe dane. <a href="https://github.com/D3anDark/dziennik">Kod i&nbsp;instalacja</a></span>
+          <span><strong>Wersja demo:</strong> przykładowe dane. <a href="https://github.com/unisic/dziennik">Kod i&nbsp;instalacja</a></span>
           <label>
             Data
             <!-- A new day is new data: the page loads again, as the demo's data is made once per load. -->
